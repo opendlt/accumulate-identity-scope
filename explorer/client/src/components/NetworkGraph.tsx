@@ -118,12 +118,15 @@ export function NetworkGraph() {
     };
   }, [topology]);
 
-  // Configure forces
+  // Configure forces — weaker charge for large graphs
   useEffect(() => {
     const fg = fgRef.current;
     if (fg) {
-      fg.d3Force('charge')?.strength(-40);
-      fg.d3Force('link')?.distance(45);
+      const nodeCount = topology?.nodes.length ?? 0;
+      // Scale charge strength down for very large graphs
+      const charge = nodeCount > 10000 ? -12 : nodeCount > 3000 ? -25 : -40;
+      fg.d3Force('charge')?.strength(charge);
+      fg.d3Force('link')?.distance(nodeCount > 10000 ? 20 : 45);
     }
   }, [topology]);
 
@@ -218,11 +221,21 @@ export function NetworkGraph() {
     const size = getNodeSize(n);
     const color = getNodeColor(n);
     const dimmed = isNodeDimmed(n.id);
+
+    // Fast path for dimmed nodes — just draw a faint dot
+    if (dimmed) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, size * 0.7, 0, 2 * Math.PI);
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      return;
+    }
+
     const isSelected = selected?.id === n.id;
     const isHovered = hovered?.id === n.id;
     const isPinned = pinnedNodes.has(n.id);
-
-    const alpha = dimmed ? 0.12 : 1;
 
     // Selection ring
     if (isSelected) {
@@ -234,7 +247,7 @@ export function NetworkGraph() {
     }
 
     // Hover glow
-    if (isHovered && !dimmed) {
+    if (isHovered) {
       ctx.beginPath();
       ctx.arc(n.x, n.y, size + 4, 0, 2 * Math.PI);
       ctx.fillStyle = color + '33';
@@ -254,7 +267,6 @@ export function NetworkGraph() {
 
     // Node shape
     ctx.beginPath();
-    ctx.globalAlpha = alpha;
     if (n.parent_url) {
       // Diamond for sub-ADIs
       ctx.moveTo(n.x, n.y - size);
@@ -267,7 +279,6 @@ export function NetworkGraph() {
     }
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.globalAlpha = 1;
 
     // Search match highlight
     if (searchMatches?.has(n.id)) {
@@ -283,7 +294,7 @@ export function NetworkGraph() {
       const label = shortLabel(n.id);
       const fontSize = Math.max(3, 10 / globalScale);
       ctx.font = `${fontSize}px Inter, sans-serif`;
-      ctx.fillStyle = dimmed ? 'rgba(232,236,244,0.15)' : themeColors.canvasText;
+      ctx.fillStyle = themeColors.canvasText;
       ctx.textAlign = 'center';
       ctx.fillText(label, n.x, n.y + size + 8 / globalScale);
     }
@@ -438,9 +449,10 @@ export function NetworkGraph() {
           }
         }}
         onBackgroundClick={handleBackgroundClick}
-        cooldownTicks={150}
-        d3AlphaDecay={0.018}
-        d3VelocityDecay={0.28}
+        warmupTicks={80}
+        cooldownTicks={60}
+        d3AlphaDecay={0.04}
+        d3VelocityDecay={0.4}
         enableZoomInteraction={true}
         enablePanInteraction={true}
         minZoom={0.2}
@@ -781,9 +793,16 @@ function Minimap({ nodes, edges, getNodeColor, fgRef, isDark }: MinimapProps & {
   // Redraw periodically as force simulation settles
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setTick(t => t + 1), 2000);
+    const timer = setInterval(() => setTick(t => t + 1), 4000);
     return () => clearInterval(timer);
   }, []);
+
+  // Pre-build node lookup map for O(1) color lookups
+  const nodeMap = useMemo(() => {
+    const m = new Map<string, TopologyNode>();
+    for (const n of nodes) m.set(n.id, n);
+    return m;
+  }, [nodes]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -827,24 +846,26 @@ function Minimap({ nodes, edges, getNodeColor, fgRef, isDark }: MinimapProps & {
     ctx.fillStyle = isDark ? 'rgba(6,8,15,0.9)' : 'rgba(245,247,250,0.9)';
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Draw edges
-    ctx.strokeStyle = 'rgba(108,140,255,0.08)';
-    ctx.lineWidth = 0.3;
-    for (const link of gd.links as any[]) {
-      const s = typeof link.source === 'object' ? link.source : posNodes.find((n: any) => n.id === link.source);
-      const t = typeof link.target === 'object' ? link.target : posNodes.find((n: any) => n.id === link.target);
-      if (!s?.x || !t?.x) continue;
-      ctx.beginPath();
-      ctx.moveTo(tx(s.x), ty(s.y));
-      ctx.lineTo(tx(t.x), ty(t.y));
-      ctx.stroke();
+    // Draw edges (skip for large graphs — they blur into noise on a 150px canvas)
+    if (posNodes.length < 5000) {
+      ctx.strokeStyle = 'rgba(108,140,255,0.08)';
+      ctx.lineWidth = 0.3;
+      for (const link of gd.links as any[]) {
+        const s = typeof link.source === 'object' ? link.source : posNodes.find((n: any) => n.id === link.source);
+        const t = typeof link.target === 'object' ? link.target : posNodes.find((n: any) => n.id === link.target);
+        if (!s?.x || !t?.x) continue;
+        ctx.beginPath();
+        ctx.moveTo(tx(s.x), ty(s.y));
+        ctx.lineTo(tx(t.x), ty(t.y));
+        ctx.stroke();
+      }
     }
 
-    // Draw nodes
-    const srcNodes = nodes;
-    for (const n of posNodes) {
+    // Draw nodes (sample if too many for minimap performance)
+    const drawNodes = posNodes.length > 5000 ? posNodes.filter((_, i) => i % 3 === 0) : posNodes;
+    for (const n of drawNodes) {
       if (n.x == null || n.y == null) continue;
-      const srcNode = srcNodes.find(sn => sn.id === n.id);
+      const srcNode = nodeMap.get(n.id);
       ctx.beginPath();
       ctx.arc(tx(n.x), ty(n.y), 1.2, 0, 2 * Math.PI);
       ctx.fillStyle = srcNode ? getNodeColor(srcNode) : themeColors.canvasTextMuted;
@@ -856,7 +877,7 @@ function Minimap({ nodes, edges, getNodeColor, fgRef, isDark }: MinimapProps & {
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, SIZE - 1, SIZE - 1);
 
-  }, [nodes, edges, getNodeColor, fgRef, tick, isDark]);
+  }, [nodes, edges, getNodeColor, fgRef, tick, isDark, nodeMap]);
 
   return (
     <canvas
