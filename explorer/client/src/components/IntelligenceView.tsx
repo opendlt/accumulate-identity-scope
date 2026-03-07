@@ -750,7 +750,7 @@ function ComparativeAnalysis({ data }: { data: Intelligence }) {
           <div className="intel-compare-results">
             {/* Radar chart */}
             <div className="intel-compare-radar">
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={260} minWidth={0}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="rgba(108,140,255,0.08)" />
                   <PolarAngleAxis dataKey="dimension" tick={{ fill: getThemeColors(isDark).canvasTextDim, fontSize: 9 }} />
@@ -870,7 +870,7 @@ function SecurityOverview({ data }: { data: Intelligence }) {
         <GlassCard delay={0.15}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: 8 }}>
             <div style={{ width: 90, height: 90 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie data={sigData} cx="50%" cy="50%" outerRadius={40} innerRadius={22} dataKey="value">
                     <Cell fill="#f59e0b" />
@@ -917,7 +917,7 @@ function SecurityOverview({ data }: { data: Intelligence }) {
       </div>
 
       <GlassCard title="Accounts per ADI Distribution" delay={0.25}>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={200} minWidth={0}>
           <BarChart data={data.accounts_per_adi}>
             <XAxis dataKey="bucket" tick={{ fill: getThemeColors(isDark).canvasTextDim, fontSize: 11 }} axisLine={{ stroke: 'rgba(108,140,255,0.08)' }} tickLine={false} />
             <YAxis tick={{ fill: getThemeColors(isDark).canvasTextDim, fontSize: 11 }} axisLine={false} tickLine={false} />

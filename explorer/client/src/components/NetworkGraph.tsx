@@ -140,26 +140,42 @@ export function NetworkGraph() {
     staleTime: 120000,
   });
 
-  // Measure container
+  // Measure container with ResizeObserver (most reliable)
   useEffect(() => {
     function measure() {
       const el = containerRef.current;
       if (el) {
-        const w = el.clientWidth || el.offsetWidth || el.getBoundingClientRect().width;
-        const h = el.clientHeight || el.offsetHeight || el.getBoundingClientRect().height;
+        const rect = el.getBoundingClientRect();
+        const w = Math.round(rect.width);
+        const h = Math.round(rect.height);
         if (w > 0 && h > 0) {
-          setDims({ width: Math.round(w), height: Math.round(h) });
+          setDims({ width: w, height: h });
           return;
         }
       }
-      setDims({ width: window.innerWidth - 64, height: window.innerHeight - 48 });
+      // Hard fallback — always produce valid dims
+      setDims({
+        width: Math.max(400, window.innerWidth - 64),
+        height: Math.max(300, window.innerHeight - 48),
+      });
     }
+
     measure();
-    const raf = requestAnimationFrame(measure);
-    const timer = setTimeout(measure, 200);
+    const timer = setTimeout(measure, 100);
+
+    let ro: ResizeObserver | null = null;
+    if (containerRef.current) {
+      ro = new ResizeObserver(() => measure());
+      ro.observe(containerRef.current);
+    }
+
     window.addEventListener('resize', measure);
-    return () => { cancelAnimationFrame(raf); clearTimeout(timer); window.removeEventListener('resize', measure); };
-  }, [topology]);
+    return () => {
+      clearTimeout(timer);
+      ro?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [topology, loadRequested]);
 
   // Compute max account total for heat scale
   const maxAccounts = useMemo(() => {

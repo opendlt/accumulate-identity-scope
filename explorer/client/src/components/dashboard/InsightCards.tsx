@@ -42,7 +42,7 @@ export function KeyReuseCard({ data }: { data: NetworkSummary }) {
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 10 }}>
           {top.key_hash.slice(0, 24)}...
         </div>
-        <ResponsiveContainer width="100%" height={100}>
+        <ResponsiveContainer width="100%" height={100} minWidth={0}>
           <BarChart data={chartData} layout="vertical">
             <XAxis type="number" hide />
             <YAxis type="category" dataKey="name" width={70} tick={{ fill: themeColors.canvasTextDim, fontSize: 9 }} axisLine={false} tickLine={false} />
@@ -72,7 +72,7 @@ export function TokenEconomyCard({ data }: { data: NetworkSummary }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ width: 80, height: 80 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="50%" outerRadius={36} innerRadius={18} dataKey="value" strokeWidth={0}>
                   <Cell fill="#22d3ee" />
@@ -135,7 +135,7 @@ export function AuthorityHotspotCard({ data }: { data: NetworkSummary }) {
           <AnimatedCounter value={data.authority.cross_adi_books} /> cross-ADI books &middot;{' '}
           <AnimatedCounter value={data.authority.delegation_count} /> delegations
         </div>
-        <ResponsiveContainer width="100%" height={80}>
+        <ResponsiveContainer width="100%" height={80} minWidth={0}>
           <BarChart data={chartData} layout="vertical">
             <XAxis type="number" hide />
             <YAxis type="category" dataKey="name" width={120} tick={{ fill: themeColors.canvasTextDim, fontSize: 9 }} axisLine={false} tickLine={false} />
@@ -173,7 +173,7 @@ export function DepthCard({ data }: { data: NetworkSummary }) {
             </div>
           ))}
         </div>
-        <ResponsiveContainer width="100%" height={80}>
+        <ResponsiveContainer width="100%" height={80} minWidth={0}>
           <BarChart data={chartData}>
             <XAxis dataKey="name" tick={{ fill: themeColors.canvasTextDim, fontSize: 10 }} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={getTooltipStyle(isDark)} />

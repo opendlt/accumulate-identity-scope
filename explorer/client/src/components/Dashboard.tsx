@@ -281,7 +281,7 @@ export function Dashboard() {
 
       {/* ===== Bottom: Top ADIs Chart ===== */}
       <GlassCard title="Top ADIs by Directory Entries" delay={0.5}>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={200} minWidth={0}>
           <BarChart data={topAdis} layout="vertical">
             <XAxis type="number" tick={{ fill: themeColors.canvasTextDim, fontSize: 11 }} axisLine={{ stroke: themeColors.gridLine }} tickLine={false} />
             <YAxis type="category" dataKey="name" width={170} tick={{ fill: themeColors.canvasTextDim, fontSize: 10 }} axisLine={false} tickLine={false} />

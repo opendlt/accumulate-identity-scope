@@ -454,7 +454,7 @@ function IssuerCard({ issuer, intel, onViewHolders }: IssuerCardProps) {
             <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Top ADIs by Token Holdings
             </div>
-            <ResponsiveContainer width="100%" height={80}>
+            <ResponsiveContainer width="100%" height={80} minWidth={0}>
               <BarChart data={topHolders.slice(0, 5).map((h: any) => ({
                 name: shortUrl(h.adi_url).slice(0, 14),
                 count: h.acme_accounts,
