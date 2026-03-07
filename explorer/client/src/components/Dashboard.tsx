@@ -24,10 +24,12 @@ export function Dashboard() {
     staleTime: 120000,
   });
 
+  const [topoEnabled, setTopoEnabled] = useState(false);
   const { data: topology, isLoading: topoLoading } = useQuery({
     queryKey: ['topology'],
     queryFn: api.getTopology,
     staleTime: 300000,
+    enabled: topoEnabled,
   });
 
   const [edgeFilters, setEdgeFilters] = useState({
@@ -195,50 +197,70 @@ export function Dashboard() {
         </GlassCard>
       </div>
 
-      {/* ===== 1C. Network Topology Map ===== */}
+      {/* ===== 1C. Network Topology Map (lazy-loaded) ===== */}
       <GlassCard
         title="Network Topology"
         titleRight={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11 }}>
-            {/* Color-by selector */}
-            <select
-              value={colorBy}
-              onChange={e => setColorBy(e.target.value)}
-              style={{
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
-                borderRadius: 6, padding: '3px 8px', color: 'var(--text-secondary)',
-                fontSize: 10, cursor: 'pointer',
-              }}
-            >
-              <option value="status">Color: Status</option>
-              <option value="accounts">Color: Account count</option>
-              <option value="depth">Color: Depth</option>
-            </select>
+          topoEnabled ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11 }}>
+              <select
+                value={colorBy}
+                onChange={e => setColorBy(e.target.value)}
+                style={{
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 6, padding: '3px 8px', color: 'var(--text-secondary)',
+                  fontSize: 10, cursor: 'pointer',
+                }}
+              >
+                <option value="status">Color: Status</option>
+                <option value="accounts">Color: Account count</option>
+                <option value="depth">Color: Depth</option>
+              </select>
 
-            {/* Edge toggles */}
-            {(['hierarchy', 'authority', 'key_sharing', 'delegation'] as const).map(type => (
-              <label key={type} style={{
-                display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer',
-                color: edgeFilters[type] ? 'var(--text-secondary)' : 'var(--text-tertiary)',
-                fontSize: 10,
-              }}>
-                <input type="checkbox" checked={edgeFilters[type]}
-                  onChange={e => setEdgeFilters(f => ({ ...f, [type]: e.target.checked }))}
-                  style={{ width: 12, height: 12 }} />
-                {type.replace('_', ' ')}
-              </label>
-            ))}
+              {(['hierarchy', 'authority', 'key_sharing', 'delegation'] as const).map(type => (
+                <label key={type} style={{
+                  display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer',
+                  color: edgeFilters[type] ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                  fontSize: 10,
+                }}>
+                  <input type="checkbox" checked={edgeFilters[type]}
+                    onChange={e => setEdgeFilters(f => ({ ...f, [type]: e.target.checked }))}
+                    style={{ width: 12, height: 12 }} />
+                  {type.replace('_', ' ')}
+                </label>
+              ))}
 
-            {topology && (
-              <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>
-                {topology.nodes.length} nodes &middot; {topology.edges.length} edges
-              </span>
-            )}
-          </div>
+              {topology && (
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>
+                  {topology.nodes.length} nodes &middot; {topology.edges.length} edges
+                </span>
+              )}
+            </div>
+          ) : null
         }
         delay={0.2}
       >
-        {topoLoading || !topology ? (
+        {!topoEnabled ? (
+          <div style={{
+            height: 420, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--bg-elevated)', border: '1px dashed var(--border-subtle)',
+            flexDirection: 'column', gap: 12,
+          }}>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+              Topology map loads 43,000+ nodes
+            </div>
+            <button
+              onClick={() => setTopoEnabled(true)}
+              style={{
+                background: 'var(--color-adi)', color: '#fff', border: 'none',
+                borderRadius: 8, padding: '8px 20px', fontSize: 12, fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Load Network Topology
+            </button>
+          </div>
+        ) : topoLoading || !topology ? (
           <div className="shimmer" style={{ height: 420, borderRadius: 12 }} />
         ) : (
           <TopologyMap data={topology} edgeFilters={edgeFilters} colorBy={colorBy} />
