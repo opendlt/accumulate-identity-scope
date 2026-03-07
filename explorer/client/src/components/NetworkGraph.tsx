@@ -184,12 +184,11 @@ export function NetworkGraph() {
   }, [topology]);
 
   // Layout positions (pre-computed, no simulation)
+  // Use a fixed large virtual space so layout is stable regardless of screen dims
   const positionedNodes = useMemo(() => {
     if (!topology) return [];
-    // Use a virtual canvas size for layout, then we pan/zoom within it
-    const layoutSize = Math.max(dims.width, dims.height, 2000);
-    return layoutNodes(topology.nodes, layoutSize, layoutSize);
-  }, [topology, dims.width, dims.height]);
+    return layoutNodes(topology.nodes, 4000, 4000);
+  }, [topology]);
 
   // Index maps for fast lookup
   const nodeById = useMemo(() => {
@@ -566,7 +565,7 @@ export function NetworkGraph() {
       {/* ── Main Canvas ── */}
       <canvas
         ref={canvasRef}
-        style={{ width: dims.width, height: dims.height, cursor: dragRef.current ? 'grabbing' : 'grab' }}
+        style={{ display: 'block', width: '100%', height: '100%', cursor: dragRef.current ? 'grabbing' : 'grab' }}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseMove={handleMouseMove}
@@ -666,34 +665,6 @@ export function NetworkGraph() {
             <svg width="8" height="8"><polygon points="4,0 8,4 4,8 0,4" fill="#a78bfa" /></svg>
             Sub-ADI
           </span>
-
-          {colorBy === 'status' && (
-            <>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#22c55e' }} /> Done</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#ef4444' }} /> Error</span>
-            </>
-          )}
-          {colorBy === 'accounts' && (
-            <>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#6c8cff' }} /> Low</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#22d3ee' }} /> Med</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#f59e0b' }} /> High</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#ef4444' }} /> Very High</span>
-            </>
-          )}
-          {colorBy === 'depth' && (
-            <>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#6c8cff' }} /> Root</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#a78bfa' }} /> Sub-ADI</span>
-            </>
-          )}
-          {colorBy === 'risk' && (
-            <>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#22c55e' }} /> Low</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#f59e0b' }} /> Medium</span>
-              <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#ef4444' }} /> High</span>
-            </>
-          )}
         </div>
       </div>
 
