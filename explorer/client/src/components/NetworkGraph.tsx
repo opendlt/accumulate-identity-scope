@@ -296,10 +296,15 @@ export function NetworkGraph() {
       }
     }
 
-    // Draw nodes (with viewport culling)
+    // Draw nodes (with viewport culling) — two passes: nodes then labels
     const nodeRadius = Math.max(1.5, 3 * invZoom);
     const showLabels = camera.zoom > 4;
+    const labelBg = isDark ? 'rgba(6,8,15,0.75)' : 'rgba(255,255,255,0.8)';
 
+    // Collect visible nodes for label pass
+    const labelNodes: Array<{ n: PositionedNode; r: number }> = [];
+
+    // Pass 1: Draw all node dots
     for (const n of positionedNodes) {
       if (n.px < vpLeft - vpPad || n.px > vpRight + vpPad || n.py < vpTop - vpPad || n.py > vpBottom + vpPad) continue;
 
@@ -313,7 +318,6 @@ export function NetworkGraph() {
         ctx.globalAlpha = 0.08;
       }
 
-      // Size by account_total
       const r = Math.max(nodeRadius, Math.log2((n.account_total || 1) + 1) * nodeRadius * 0.6);
 
       // Hover/select highlight
@@ -341,7 +345,6 @@ export function NetworkGraph() {
       // Node dot
       ctx.beginPath();
       if (n.parent_url) {
-        // Diamond
         ctx.moveTo(n.px, n.py - r);
         ctx.lineTo(n.px + r, n.py);
         ctx.lineTo(n.px, n.py + r);
@@ -355,13 +358,40 @@ export function NetworkGraph() {
 
       ctx.globalAlpha = 1;
 
-      // Labels at high zoom or for hovered/selected
+      // Collect for label pass
       if (showLabels || isHov || isSel) {
-        const fontSize = Math.max(3, 10 * invZoom);
-        ctx.font = `${fontSize}px Inter, sans-serif`;
+        labelNodes.push({ n, r });
+      }
+    }
+
+    // Pass 2: Draw labels on top of all nodes with background pill
+    if (labelNodes.length > 0) {
+      const fontSize = Math.max(3, 10 * invZoom);
+      ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      for (const { n, r } of labelNodes) {
+        const label = shortLabel(n.id);
+        const labelY = n.py + r + 4 * invZoom;
+        const metrics = ctx.measureText(label);
+        const padX = 3 * invZoom;
+        const padY = 1.5 * invZoom;
+
+        // Background pill
+        ctx.fillStyle = labelBg;
+        ctx.beginPath();
+        const bx = n.px - metrics.width / 2 - padX;
+        const by = labelY - padY;
+        const bw = metrics.width + padX * 2;
+        const bh = fontSize + padY * 2;
+        const br = 2 * invZoom;
+        ctx.roundRect(bx, by, bw, bh, br);
+        ctx.fill();
+
+        // Text
         ctx.fillStyle = themeColors.canvasText;
-        ctx.textAlign = 'center';
-        ctx.fillText(shortLabel(n.id), n.px, n.py + r + 10 * invZoom);
+        ctx.fillText(label, n.px, labelY);
       }
     }
 
