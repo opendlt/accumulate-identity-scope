@@ -97,20 +97,26 @@ export function NetworkGraph() {
     staleTime: 120000,
   });
 
-  // Measure container
+  // Measure container — re-measure when topology loads (ref changes from loading to graph div)
   useEffect(() => {
     function measure() {
       if (containerRef.current) {
-        setDims({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        });
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        if (w > 0 && h > 0) {
+          setDims({ width: w, height: h });
+        }
       }
     }
     measure();
+    // Also measure after a short delay to catch post-layout sizing
+    const raf = requestAnimationFrame(measure);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', measure);
+    };
+  }, [topology]);
 
   // Configure forces
   useEffect(() => {
