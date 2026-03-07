@@ -7,7 +7,8 @@ import { GlowBadge } from './ui/GlowBadge';
 import { AnimatedCounter } from './ui/AnimatedCounter';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeColors } from '../hooks/useThemeColors';
-import type { TopologyNode, TopologyEdge } from '../types';
+import type { TopologyNode, TopologyEdge, TopologyData } from '../types';
+import TopologyWorker from '../workers/topologyWorker?worker';
 
 /* ── Color Palettes ─────────────────────────────── */
 
@@ -113,12 +114,24 @@ export function NetworkGraph() {
     delegation: false,
   });
 
-  // Data
-  const { data: topology, isLoading } = useQuery({
-    queryKey: ['topology'],
-    queryFn: api.getTopology,
-    staleTime: 300000,
-  });
+  // Data — lazy loaded via Web Worker to keep UI responsive
+  const [loadRequested, setLoadRequested] = useState(false);
+  const [topology, setTopology] = useState<TopologyData | null>(null);
+  const [loadStatus, setLoadStatus] = useState<string>('');
+  const [loadError, setLoadError] = useState<string>('');
+  const isLoading = loadRequested && !topology && !loadError;
+
+  useEffect(() => {
+    if (!loadRequested) return;
+    const worker = new TopologyWorker();
+    worker.onmessage = (e) => {
+      if (e.data.type === 'status') setLoadStatus(e.data.message);
+      if (e.data.type === 'done') { setTopology(e.data.data); setLoadStatus(''); }
+      if (e.data.type === 'error') { setLoadError(e.data.message); setLoadStatus(''); }
+    };
+    worker.postMessage('start');
+    return () => worker.terminate();
+  }, [loadRequested]);
 
   const { data: adiDetail } = useQuery({
     queryKey: ['adi-detail', selected?.id],
@@ -457,18 +470,72 @@ export function NetworkGraph() {
     }
   }, [positionedNodes, handleZoomToFit]);
 
-  /* ── Loading State ────────────────────────────── */
+  /* ── Landing / Loading State ────────────────────── */
+
+  if (!loadRequested) {
+    return (
+      <div className="network-graph-fullscreen" ref={containerRef}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '100%', color: 'var(--text-tertiary)', flexDirection: 'column', gap: 16,
+        }}>
+          <div style={{ fontSize: 48, fontWeight: 800, color: 'var(--color-adi)', opacity: 0.3 }}>
+            Network Topology
+          </div>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}>
+            This view renders 43,000+ identity nodes on an interactive canvas.
+            Loading requires downloading ~9 MB of data.
+          </div>
+          <button
+            onClick={() => setLoadRequested(true)}
+            style={{
+              marginTop: 8, background: 'var(--color-adi)', color: '#fff', border: 'none',
+              borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600,
+              cursor: 'pointer', letterSpacing: '0.02em',
+            }}
+          >
+            Load Network Graph
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="network-graph-fullscreen" ref={containerRef}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '100%', color: '#ef4444', flexDirection: 'column', gap: 12,
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Failed to load topology</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{loadError}</div>
+          <button
+            onClick={() => { setLoadError(''); setLoadRequested(true); }}
+            style={{
+              marginTop: 8, background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 20px',
+              fontSize: 12, cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || !topology) {
     return (
-      <div className="network-graph-fullscreen">
+      <div className="network-graph-fullscreen" ref={containerRef}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: '100%', color: 'var(--text-tertiary)',
+          height: '100%', color: 'var(--text-tertiary)', flexDirection: 'column', gap: 16,
         }}>
-          <div style={{ textAlign: 'center' }}>
-            <div className="shimmer" style={{ width: 200, height: 200, borderRadius: '50%', margin: '0 auto 20px' }} />
-            <div style={{ fontSize: 14 }}>Loading network topology...</div>
+          <div className="shimmer" style={{ width: 120, height: 120, borderRadius: '50%' }} />
+          <div style={{ fontSize: 14 }}>{loadStatus || 'Loading...'}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            Data is loading in a background thread — the app stays responsive.
           </div>
         </div>
       </div>
