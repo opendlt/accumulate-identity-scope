@@ -3,6 +3,7 @@
   "buildCommand": "cd explorer/client && npm run build",
   "outputDirectory": "explorer/client/dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "http://116.202.214.38:8060/api/:path*" }
+    { "source": "/api/:path*", "destination": "http://116.202.214.38:8060/api/:path*" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }
