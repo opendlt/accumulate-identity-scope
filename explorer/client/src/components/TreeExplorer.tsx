@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api/client';
-import { GlassCard } from './ui/GlassCard';
 import { GlowBadge } from './ui/GlowBadge';
 import { RingGauge } from './ui/RingGauge';
 import { AnimatedCounter } from './ui/AnimatedCounter';

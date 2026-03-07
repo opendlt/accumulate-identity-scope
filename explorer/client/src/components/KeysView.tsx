@@ -561,7 +561,7 @@ function KeyTimeline() {
   });
 
   const timelineData = useMemo(() => {
-    if (!keyPages) return [];
+    if (!keyPages) return { total: 0, recent: 0, old: 0, never: 0 };
 
     // Collect all key entries with last_used_on
     const entries: { hash: string; lastUsed: number | null; pageUrl: string }[] = [];

@@ -347,7 +347,7 @@ function KeyReuseClusters({ data }: { data: Intelligence['key_reuse'] }) {
 
       // Draw satellite dots for ADIs if hovered
       if (isHov || isSel) {
-        cl.adi_urls.forEach((adi, ai) => {
+        cl.adi_urls.forEach((_adi, ai) => {
           const satAngle = (2 * Math.PI * ai) / cl.adi_urls.length;
           const satR = cl.radius + 18;
           const sx = cl.x + Math.cos(satAngle) * satR;
@@ -935,7 +935,6 @@ function SecurityOverview({ data }: { data: Intelligence }) {
    ═══════════════════════════════════════════════ */
 
 export function IntelligenceView() {
-  const { isDark } = useTheme();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['intelligence'],
     queryFn: api.getIntelligence,

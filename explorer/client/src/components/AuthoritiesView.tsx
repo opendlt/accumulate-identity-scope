@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { api } from '../api/client';
 import { GlassCard } from './ui/GlassCard';
 import { GlowBadge } from './ui/GlowBadge';
@@ -487,7 +487,6 @@ function ChordDiagram({ data }: { data: ChordLink[] }) {
       const labelR = radius + 14;
       const lx = cx + Math.cos(labelAngle) * labelR;
       const ly = cy + Math.sin(labelAngle) * labelR;
-      const rotation = labelAngle * (180 / Math.PI);
       const flip = labelAngle > Math.PI / 2 && labelAngle < Math.PI * 1.5;
 
       ctx.save();

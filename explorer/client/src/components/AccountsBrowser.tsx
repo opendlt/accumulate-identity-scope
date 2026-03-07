@@ -38,7 +38,6 @@ export function AccountsBrowser() {
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const perPage = 50;
   const { isDark } = useTheme();
-  const themeColors = getThemeColors(isDark);
 
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: api.getStats, staleTime: 120000 });
   const { data: issuers } = useQuery({ queryKey: ['token-issuers'], queryFn: api.listTokenIssuers });

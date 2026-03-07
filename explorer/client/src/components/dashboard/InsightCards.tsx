@@ -56,8 +56,6 @@ export function KeyReuseCard({ data }: { data: NetworkSummary }) {
 }
 
 export function TokenEconomyCard({ data }: { data: NetworkSummary }) {
-  const { isDark } = useTheme();
-  const themeColors = getThemeColors(isDark);
   const acmeCount = data.token_distribution.find(t => t.token_url === 'acc://ACME')?.count || 0;
   const customCount = data.counts.token_accounts - acmeCount;
   const pieData = [

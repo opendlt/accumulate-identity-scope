@@ -669,7 +669,6 @@ export function NetworkGraph() {
             <div className="net-flyout-section">
               <div className="net-flyout-section-title">Connections</div>
               {(() => {
-                const neighbors = neighborMap.get(selected.id);
                 const connectedEdges = topology.edges.filter(
                   e => e.source === selected.id || e.target === selected.id
                 );
