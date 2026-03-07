@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Node / Frontend
+node_modules/
+explorer/client/dist/
+explorer/client/.vite/
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+explorer/Dockerfile
+
+# Planning docs (local only)
+EXPLORER_REDESIGN_PLAN.md
+EXPLORER_UI_PLAN.md
+IDENTITY_SCOPE_REBRAND_PLAN.md
+
+# Vite boilerplate
+explorer/client/public/vite.svg
+explorer/client/src/assets/
+explorer/client/src/App.css
+explorer/client/src/index.css
+explorer/client/README.md
