@@ -1,8 +1,7 @@
-import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import ForceGraph2D from 'react-force-graph-2d';
 import { api } from '../api/client';
 import { GlowBadge } from './ui/GlowBadge';
 import { AnimatedCounter } from './ui/AnimatedCounter';
@@ -12,42 +11,21 @@ import type { TopologyNode, TopologyEdge } from '../types';
 
 /* ── Color Palettes ─────────────────────────────── */
 
-const STATUS_COLORS_DARK = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#4a5078' };
-const STATUS_COLORS_LIGHT = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#8b92ab' };
+const STATUS_COLORS_DARK: Record<string, string> = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#4a5078' };
+const STATUS_COLORS_LIGHT: Record<string, string> = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#8b92ab' };
 
 function heatColor(t: number): string {
-  // 0=cool blue → 1=hot red
   if (t < 0.25) return '#6c8cff';
   if (t < 0.5) return '#22d3ee';
   if (t < 0.75) return '#f59e0b';
   return '#ef4444';
 }
 
-function depthColor(hasParent: boolean): string {
-  return hasParent ? '#a78bfa' : '#6c8cff';
-}
-
-/* ── Edge Styles ────────────────────────────────── */
-
 const EDGE_COLORS: Record<string, string> = {
-  hierarchy: 'rgba(108,140,255,0.15)',
-  authority: 'rgba(245,158,11,0.22)',
-  key_sharing: 'rgba(239,68,68,0.20)',
-  delegation: 'rgba(52,211,153,0.25)',
-};
-
-const EDGE_COLORS_BRIGHT: Record<string, string> = {
-  hierarchy: 'rgba(108,140,255,0.6)',
-  authority: 'rgba(245,158,11,0.7)',
-  key_sharing: 'rgba(239,68,68,0.65)',
-  delegation: 'rgba(52,211,153,0.7)',
-};
-
-const EDGE_DASH: Record<string, number[] | null> = {
-  hierarchy: null,
-  authority: [4, 3],
-  key_sharing: [2, 2],
-  delegation: [6, 3],
+  hierarchy: 'rgba(108,140,255,0.12)',
+  authority: 'rgba(245,158,11,0.18)',
+  key_sharing: 'rgba(239,68,68,0.16)',
+  delegation: 'rgba(52,211,153,0.20)',
 };
 
 /* ── Helpers ────────────────────────────────────── */
@@ -56,10 +34,59 @@ function shortLabel(url: string) {
   return url.replace('acc://', '').replace('.acme', '');
 }
 
+/* ── Layout: Hilbert curve for spatial locality ── */
+
+function hilbertD2xy(n: number, d: number): [number, number] {
+  let rx: number, ry: number, s: number, t = d;
+  let x = 0, y = 0;
+  for (s = 1; s < n; s *= 2) {
+    rx = (t & 2) > 0 ? 1 : 0;
+    ry = ((t & 1) ^ rx) > 0 ? 0 : 1;
+    if (ry === 0) {
+      if (rx === 1) { x = s - 1 - x; y = s - 1 - y; }
+      const tmp = x; x = y; y = tmp;
+    }
+    x += s * rx;
+    y += s * ry;
+    t = Math.floor(t / 4);
+  }
+  return [x, y];
+}
+
+interface PositionedNode extends TopologyNode {
+  px: number;
+  py: number;
+}
+
+function layoutNodes(nodes: TopologyNode[], width: number, height: number): PositionedNode[] {
+  const n = nodes.length;
+  if (n === 0) return [];
+
+  // Use Hilbert curve for spatially coherent placement
+  // Find smallest power of 2 that fits all nodes in a square grid
+  let order = 1;
+  while (order * order < n) order *= 2;
+
+  const pad = 40;
+  const usableW = width - pad * 2;
+  const usableH = height - pad * 2;
+  const cellW = usableW / order;
+  const cellH = usableH / order;
+
+  return nodes.map((node, i) => {
+    const [hx, hy] = hilbertD2xy(order, i);
+    return {
+      ...node,
+      px: pad + hx * cellW + cellW / 2,
+      py: pad + hy * cellH + cellH / 2,
+    };
+  });
+}
+
 /* ── Component ──────────────────────────────────── */
 
 export function NetworkGraph() {
-  const fgRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -68,15 +95,17 @@ export function NetworkGraph() {
 
   // State
   const [dims, setDims] = useState({ width: 800, height: 600 });
-  const [hovered, setHovered] = useState<TopologyNode | null>(null);
-  const [selected, setSelected] = useState<TopologyNode | null>(null);
+  const [hovered, setHovered] = useState<PositionedNode | null>(null);
+  const [selected, setSelected] = useState<PositionedNode | null>(null);
   const [flyoutOpen, setFlyoutOpen] = useState(false);
-  const [pinnedNodes, setPinnedNodes] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Camera (pan/zoom)
+  const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
 
   // Controls
   const [colorBy, setColorBy] = useState('status');
-  const [showNodes, setShowNodes] = useState<'roots' | 'all'>('roots');
   const [edgeFilters, setEdgeFilters] = useState({
     hierarchy: false,
     authority: false,
@@ -98,7 +127,7 @@ export function NetworkGraph() {
     staleTime: 120000,
   });
 
-  // Measure container — use multiple strategies to get dimensions
+  // Measure container
   useEffect(() => {
     function measure() {
       const el = containerRef.current;
@@ -110,35 +139,14 @@ export function NetworkGraph() {
           return;
         }
       }
-      // Fallback: use window size minus sidebar/topbar estimates
       setDims({ width: window.innerWidth - 64, height: window.innerHeight - 48 });
     }
     measure();
     const raf = requestAnimationFrame(measure);
-    // Also retry after a short delay for late layout
     const timer = setTimeout(measure, 200);
     window.addEventListener('resize', measure);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
-      window.removeEventListener('resize', measure);
-    };
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer); window.removeEventListener('resize', measure); };
   }, [topology]);
-
-  // Handle select from URL
-  useEffect(() => {
-    const selectUrl = searchParams.get('select');
-    if (selectUrl && topology) {
-      const node = topology.nodes.find(n => n.id === selectUrl);
-      if (node) {
-        setSelected(node);
-        setFlyoutOpen(true);
-        setTimeout(() => {
-          fgRef.current?.centerAt(0, 0, 300);
-        }, 500);
-      }
-    }
-  }, [searchParams, topology]);
 
   // Compute max account total for heat scale
   const maxAccounts = useMemo(() => {
@@ -146,284 +154,308 @@ export function NetworkGraph() {
     return Math.max(1, ...topology.nodes.map(n => n.account_total));
   }, [topology]);
 
-  // Build neighbor sets for hover highlighting
-  const neighborMap = useMemo(() => {
-    if (!topology) return new Map<string, Set<string>>();
-    const map = new Map<string, Set<string>>();
-    for (const node of topology.nodes) {
-      map.set(node.id, new Set());
+  // Layout positions (pre-computed, no simulation)
+  const positionedNodes = useMemo(() => {
+    if (!topology) return [];
+    // Use a virtual canvas size for layout, then we pan/zoom within it
+    const layoutSize = Math.max(dims.width, dims.height, 2000);
+    return layoutNodes(topology.nodes, layoutSize, layoutSize);
+  }, [topology, dims.width, dims.height]);
+
+  // Index maps for fast lookup
+  const nodeById = useMemo(() => {
+    const m = new Map<string, PositionedNode>();
+    for (const n of positionedNodes) m.set(n.id, n);
+    return m;
+  }, [positionedNodes]);
+
+  // Edge source/target lookup
+  const edgesByNode = useMemo(() => {
+    if (!topology) return new Map<string, TopologyEdge[]>();
+    const m = new Map<string, TopologyEdge[]>();
+    for (const e of topology.edges) {
+      if (!m.has(e.source)) m.set(e.source, []);
+      if (!m.has(e.target)) m.set(e.target, []);
+      m.get(e.source)!.push(e);
+      m.get(e.target)!.push(e);
     }
-    for (const edge of topology.edges) {
-      map.get(edge.source)?.add(edge.target);
-      map.get(edge.target)?.add(edge.source);
-    }
-    return map;
+    return m;
   }, [topology]);
 
-  // Search matching node IDs
+  // Visible edges
+  const filteredEdges = useMemo(() => {
+    if (!topology) return [];
+    return topology.edges.filter(e => edgeFilters[e.type as keyof typeof edgeFilters]);
+  }, [topology, edgeFilters]);
+
+  // Search matches
   const searchMatches = useMemo(() => {
     if (!searchTerm || !topology) return null;
     const term = searchTerm.toLowerCase();
     return new Set(topology.nodes.filter(n => n.id.toLowerCase().includes(term)).map(n => n.id));
   }, [searchTerm, topology]);
 
-  // Filter nodes
-  const filteredNodes = useMemo(() => {
-    if (!topology) return [];
-    if (showNodes === 'roots') return topology.nodes.filter(n => !n.parent_url);
-    return topology.nodes;
-  }, [topology, showNodes]);
-
-  const visibleNodeIds = useMemo(() => {
-    return new Set(filteredNodes.map(n => n.id));
-  }, [filteredNodes]);
-
-  // Filter edges — only include edges where both endpoints are visible
-  const filteredEdges = useMemo(() => {
-    if (!topology) return [];
-    return topology.edges.filter(e =>
-      edgeFilters[e.type] !== false &&
-      visibleNodeIds.has(e.source) &&
-      visibleNodeIds.has(e.target)
-    );
-  }, [topology, edgeFilters, visibleNodeIds]);
-
-  const graphData = useMemo(() => {
-    if (!topology) return { nodes: [], links: [] };
-    return {
-      nodes: filteredNodes.map(n => ({ ...n })),
-      links: filteredEdges.map(e => ({ ...e })),
-    };
-  }, [topology, filteredNodes, filteredEdges]);
-
-  // Configure forces — scale based on visible node count
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (fg) {
-      const nodeCount = filteredNodes.length;
-      const charge = nodeCount > 10000 ? -12 : nodeCount > 3000 ? -25 : -40;
-      fg.d3Force('charge')?.strength(charge);
-      fg.d3Force('link')?.distance(nodeCount > 10000 ? 20 : 45);
-    }
-  }, [filteredNodes]);
-
-  /* ── Node Rendering ───────────────────────────── */
-
+  // Color function
   const getNodeColor = useCallback((node: TopologyNode) => {
     if (colorBy === 'status') {
       const sc = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
-      return sc[node.crawl_status as keyof typeof sc] || sc.default;
+      return sc[node.crawl_status] || sc.default;
     }
-    if (colorBy === 'accounts') {
-      return heatColor(node.account_total / maxAccounts);
-    }
-    if (colorBy === 'depth') {
-      return depthColor(!!node.parent_url);
-    }
-    if (colorBy === 'risk') {
-      // nodes with higher book_count relative to accounts = higher risk
-      return node.book_count > 2 ? '#ef4444' : node.book_count > 1 ? '#f59e0b' : '#22c55e';
-    }
+    if (colorBy === 'accounts') return heatColor(node.account_total / maxAccounts);
+    if (colorBy === 'depth') return node.parent_url ? '#a78bfa' : '#6c8cff';
+    if (colorBy === 'risk') return node.book_count > 2 ? '#ef4444' : node.book_count > 1 ? '#f59e0b' : '#22c55e';
     return '#6c8cff';
   }, [colorBy, maxAccounts, isDark]);
 
-  const getNodeSize = useCallback((node: TopologyNode) => {
-    return Math.max(2.5, Math.log2((node.account_total || 1) + 1) * 2.2);
-  }, []);
-
-  const isNodeDimmed = useCallback((nodeId: string) => {
-    if (searchMatches && !searchMatches.has(nodeId)) return true;
-    if (hovered && hovered.id !== nodeId && !neighborMap.get(hovered.id)?.has(nodeId)) return true;
-    return false;
-  }, [hovered, neighborMap, searchMatches]);
-
-  const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const n = node as TopologyNode & { x: number; y: number };
-    const size = getNodeSize(n);
-    const color = getNodeColor(n);
-    const dimmed = isNodeDimmed(n.id);
-
-    // Fast path for dimmed nodes — just draw a faint dot
-    if (dimmed) {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, size * 0.7, 0, 2 * Math.PI);
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      return;
+  // Handle select from URL
+  useEffect(() => {
+    const selectUrl = searchParams.get('select');
+    if (selectUrl && positionedNodes.length > 0) {
+      const node = nodeById.get(selectUrl);
+      if (node) {
+        setSelected(node);
+        setFlyoutOpen(true);
+        setCamera({ x: dims.width / 2 - node.px * 3, y: dims.height / 2 - node.py * 3, zoom: 3 });
+      }
     }
+  }, [searchParams, positionedNodes, nodeById, dims]);
 
-    const isSelected = selected?.id === n.id;
-    const isHovered = hovered?.id === n.id;
-    const isPinned = pinnedNodes.has(n.id);
+  // ── Canvas Rendering ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || positionedNodes.length === 0) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    // Selection ring
-    if (isSelected) {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, size + 5, 0, 2 * Math.PI);
-      ctx.strokeStyle = '#6c8cff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = dims.width * dpr;
+    canvas.height = dims.height * dpr;
+    ctx.scale(dpr, dpr);
 
-    // Hover glow
-    if (isHovered) {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, size + 4, 0, 2 * Math.PI);
-      ctx.fillStyle = color + '33';
-      ctx.fill();
-    }
+    // Clear
+    ctx.fillStyle = themeColors.canvasBg;
+    ctx.fillRect(0, 0, dims.width, dims.height);
 
-    // Pin indicator
-    if (isPinned) {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, size + 3, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(245,158,11,0.5)';
-      ctx.lineWidth = 0.8;
-      ctx.setLineDash([2, 2]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.zoom, camera.zoom);
 
-    // Node shape
-    ctx.beginPath();
-    if (n.parent_url) {
-      // Diamond for sub-ADIs
-      ctx.moveTo(n.x, n.y - size);
-      ctx.lineTo(n.x + size, n.y);
-      ctx.lineTo(n.x, n.y + size);
-      ctx.lineTo(n.x - size, n.y);
-      ctx.closePath();
-    } else {
-      ctx.arc(n.x, n.y, size, 0, 2 * Math.PI);
-    }
-    ctx.fillStyle = color;
-    ctx.fill();
+    // Viewport bounds in world space (for culling)
+    const invZoom = 1 / camera.zoom;
+    const vpLeft = -camera.x * invZoom;
+    const vpTop = -camera.y * invZoom;
+    const vpRight = vpLeft + dims.width * invZoom;
+    const vpBottom = vpTop + dims.height * invZoom;
+    const vpPad = 20 * invZoom;
 
-    // Search match highlight
-    if (searchMatches?.has(n.id)) {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, size + 6, 0, 2 * Math.PI);
-      ctx.strokeStyle = '#f472b6';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-    }
-
-    // Label
-    if (globalScale > 2.2 || isHovered || isSelected) {
-      const label = shortLabel(n.id);
-      const fontSize = Math.max(3, 10 / globalScale);
-      ctx.font = `${fontSize}px Inter, sans-serif`;
-      ctx.fillStyle = themeColors.canvasText;
-      ctx.textAlign = 'center';
-      ctx.fillText(label, n.x, n.y + size + 8 / globalScale);
-    }
-  }, [getNodeColor, getNodeSize, isNodeDimmed, selected, hovered, pinnedNodes, searchMatches, themeColors]);
-
-  /* ── Edge Rendering ───────────────────────────── */
-
-  const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
-    const s = link.source;
-    const t = link.target;
-    if (!s?.x || !t?.x) return;
-    const edgeType = link.type as string;
-
-    // Highlight edges connected to hovered node
-    const isHighlighted = hovered && (s.id === hovered.id || t.id === hovered.id);
-    const dimmed = hovered && !isHighlighted;
-
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(t.x, t.y);
-    ctx.strokeStyle = isHighlighted
-      ? (EDGE_COLORS_BRIGHT[edgeType] || 'rgba(108,140,255,0.5)')
-      : dimmed
-        ? 'rgba(108,140,255,0.03)'
-        : (EDGE_COLORS[edgeType] || 'rgba(108,140,255,0.08)');
-    ctx.lineWidth = isHighlighted ? 1.2 : (edgeType === 'hierarchy' ? 0.4 : 0.7);
-    const dash = EDGE_DASH[edgeType];
-    if (dash) ctx.setLineDash(dash);
-    else ctx.setLineDash([]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Arrow for delegation
-    if (edgeType === 'delegation' && !dimmed) {
-      const dx = t.x - s.x;
-      const dy = t.y - s.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len > 10) {
-        const ux = dx / len;
-        const uy = dy / len;
-        const mx = (s.x + t.x) / 2;
-        const my = (s.y + t.y) / 2;
-        const arrowSize = 3;
+    // Draw edges (only if enabled — these are the expensive part)
+    if (filteredEdges.length > 0 && filteredEdges.length < 50000) {
+      for (const e of filteredEdges) {
+        const src = nodeById.get(e.source);
+        const tgt = nodeById.get(e.target);
+        if (!src || !tgt) continue;
+        // Cull edges fully outside viewport
+        const eMinX = Math.min(src.px, tgt.px);
+        const eMaxX = Math.max(src.px, tgt.px);
+        const eMinY = Math.min(src.py, tgt.py);
+        const eMaxY = Math.max(src.py, tgt.py);
+        if (eMaxX < vpLeft - vpPad || eMinX > vpRight + vpPad || eMaxY < vpTop - vpPad || eMinY > vpBottom + vpPad) continue;
         ctx.beginPath();
-        ctx.moveTo(mx + ux * arrowSize, my + uy * arrowSize);
-        ctx.lineTo(mx - ux * arrowSize + uy * arrowSize * 0.6, my - uy * arrowSize - ux * arrowSize * 0.6);
-        ctx.lineTo(mx - ux * arrowSize - uy * arrowSize * 0.6, my - uy * arrowSize + ux * arrowSize * 0.6);
-        ctx.closePath();
-        ctx.fillStyle = EDGE_COLORS_BRIGHT.delegation;
+        ctx.moveTo(src.px, src.py);
+        ctx.lineTo(tgt.px, tgt.py);
+        ctx.strokeStyle = EDGE_COLORS[e.type] || 'rgba(108,140,255,0.08)';
+        ctx.lineWidth = 0.5 * invZoom;
+        ctx.stroke();
+      }
+    }
+
+    // Draw nodes (with viewport culling)
+    const nodeRadius = Math.max(1.5, 3 * invZoom);
+    const showLabels = camera.zoom > 4;
+
+    for (const n of positionedNodes) {
+      if (n.px < vpLeft - vpPad || n.px > vpRight + vpPad || n.py < vpTop - vpPad || n.py > vpBottom + vpPad) continue;
+
+      const color = getNodeColor(n);
+      const isSearch = searchMatches?.has(n.id);
+      const isHov = hovered?.id === n.id;
+      const isSel = selected?.id === n.id;
+
+      // Dim non-matching nodes during search
+      if (searchMatches && !isSearch) {
+        ctx.globalAlpha = 0.08;
+      }
+
+      // Size by account_total
+      const r = Math.max(nodeRadius, Math.log2((n.account_total || 1) + 1) * nodeRadius * 0.6);
+
+      // Hover/select highlight
+      if (isSel) {
+        ctx.beginPath();
+        ctx.arc(n.px, n.py, r + 4 * invZoom, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#6c8cff';
+        ctx.lineWidth = 1.5 * invZoom;
+        ctx.stroke();
+      }
+      if (isHov) {
+        ctx.beginPath();
+        ctx.arc(n.px, n.py, r + 3 * invZoom, 0, 2 * Math.PI);
+        ctx.fillStyle = color + '44';
         ctx.fill();
       }
-    }
-  }, [hovered]);
+      if (isSearch) {
+        ctx.beginPath();
+        ctx.arc(n.px, n.py, r + 5 * invZoom, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#f472b6';
+        ctx.lineWidth = 1.2 * invZoom;
+        ctx.stroke();
+      }
 
-  /* ── Event Handlers ───────────────────────────── */
-
-  const handleNodeClick = useCallback((node: any) => {
-    const n = node as TopologyNode;
-    setSelected(n);
-    setFlyoutOpen(true);
-  }, []);
-
-  const handleNodeDoubleClick = useCallback((node: any) => {
-    fgRef.current?.centerAt(node.x, node.y, 600);
-    fgRef.current?.zoom(5, 600);
-  }, []);
-
-  const handleBackgroundClick = useCallback(() => {
-    if (!hovered) {
-      setFlyoutOpen(false);
-    }
-  }, [hovered]);
-
-  const togglePin = useCallback((nodeId: string) => {
-    setPinnedNodes(prev => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-        // Unpin in force graph
-        const fg = fgRef.current;
-        if (fg) {
-          const gd = fg.graphData();
-          const node = gd.nodes.find((n: any) => n.id === nodeId);
-          if (node) {
-            node.fx = undefined;
-            node.fy = undefined;
-          }
-        }
+      // Node dot
+      ctx.beginPath();
+      if (n.parent_url) {
+        // Diamond
+        ctx.moveTo(n.px, n.py - r);
+        ctx.lineTo(n.px + r, n.py);
+        ctx.lineTo(n.px, n.py + r);
+        ctx.lineTo(n.px - r, n.py);
+        ctx.closePath();
       } else {
-        next.add(nodeId);
-        // Pin in force graph
-        const fg = fgRef.current;
-        if (fg) {
-          const gd = fg.graphData();
-          const node = gd.nodes.find((n: any) => n.id === nodeId);
-          if (node) {
-            node.fx = node.x;
-            node.fy = node.y;
-          }
+        ctx.arc(n.px, n.py, r, 0, 2 * Math.PI);
+      }
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      ctx.globalAlpha = 1;
+
+      // Labels at high zoom or for hovered/selected
+      if (showLabels || isHov || isSel) {
+        const fontSize = Math.max(3, 10 * invZoom);
+        ctx.font = `${fontSize}px Inter, sans-serif`;
+        ctx.fillStyle = themeColors.canvasText;
+        ctx.textAlign = 'center';
+        ctx.fillText(shortLabel(n.id), n.px, n.py + r + 10 * invZoom);
+      }
+    }
+
+    ctx.restore();
+
+    // Stats overlay
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = themeColors.canvasTextDim;
+    ctx.textAlign = 'left';
+    ctx.fillText(`${positionedNodes.length.toLocaleString()} nodes  |  Zoom: ${camera.zoom.toFixed(1)}x`, 12, dims.height - 12);
+
+  }, [positionedNodes, filteredEdges, camera, dims, isDark, themeColors, getNodeColor, hovered, selected, searchMatches, nodeById]);
+
+  // ── Hit testing ──
+  const hitTest = useCallback((clientX: number, clientY: number): PositionedNode | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    // Convert to world coords
+    const wx = (mx - camera.x) / camera.zoom;
+    const wy = (my - camera.y) / camera.zoom;
+    const hitR = Math.max(6, 12 / camera.zoom);
+
+    let closest: PositionedNode | null = null;
+    let closestDist = hitR * hitR;
+    for (const n of positionedNodes) {
+      const dx = n.px - wx;
+      const dy = n.py - wy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < closestDist) {
+        closestDist = d2;
+        closest = n;
+      }
+    }
+    return closest;
+  }, [camera, positionedNodes]);
+
+  // ── Mouse Handlers ──
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (dragRef.current) {
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      setCamera(c => ({ ...c, x: dragRef.current!.camX + dx, y: dragRef.current!.camY + dy }));
+      return;
+    }
+    setHovered(hitTest(e.clientX, e.clientY));
+  }, [hitTest]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 0) {
+      dragRef.current = { startX: e.clientX, startY: e.clientY, camX: camera.x, camY: camera.y };
+    }
+  }, [camera]);
+
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (dragRef.current) {
+      const dx = Math.abs(e.clientX - dragRef.current.startX);
+      const dy = Math.abs(e.clientY - dragRef.current.startY);
+      dragRef.current = null;
+      // If it was a click (not a drag), do hit test
+      if (dx < 4 && dy < 4) {
+        const node = hitTest(e.clientX, e.clientY);
+        if (node) {
+          setSelected(node);
+          setFlyoutOpen(true);
+        } else {
+          setFlyoutOpen(false);
         }
       }
-      return next;
+    }
+  }, [hitTest]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setCamera(c => {
+      const newZoom = Math.max(0.1, Math.min(50, c.zoom * factor));
+      const ratio = newZoom / c.zoom;
+      return {
+        zoom: newZoom,
+        x: mx - (mx - c.x) * ratio,
+        y: my - (my - c.y) * ratio,
+      };
     });
   }, []);
 
   const handleZoomToFit = useCallback(() => {
-    fgRef.current?.zoomToFit(400, 60);
-  }, []);
+    if (positionedNodes.length === 0) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of positionedNodes) {
+      minX = Math.min(minX, n.px);
+      maxX = Math.max(maxX, n.px);
+      minY = Math.min(minY, n.py);
+      maxY = Math.max(maxY, n.py);
+    }
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const pad = 60;
+    const zoom = Math.min((dims.width - pad) / rangeX, (dims.height - pad) / rangeY);
+    setCamera({
+      zoom,
+      x: (dims.width - rangeX * zoom) / 2 - minX * zoom,
+      y: (dims.height - rangeY * zoom) / 2 - minY * zoom,
+    });
+  }, [positionedNodes, dims]);
+
+  // Auto zoom-to-fit on first load
+  const didAutoFit = useRef(false);
+  useEffect(() => {
+    if (positionedNodes.length > 0 && !didAutoFit.current) {
+      didAutoFit.current = true;
+      handleZoomToFit();
+    }
+  }, [positionedNodes, handleZoomToFit]);
 
   /* ── Loading State ────────────────────────────── */
 
@@ -445,39 +477,18 @@ export function NetworkGraph() {
 
   /* ── Render ────────────────────────────────────── */
 
-  const edgeCount = filteredEdges.length;
-
   return (
     <div className="network-graph-fullscreen" ref={containerRef}>
 
       {/* ── Main Canvas ── */}
-      <ForceGraph2D
-        ref={fgRef}
-        graphData={graphData}
-        width={dims.width}
-        height={dims.height}
-        backgroundColor={themeColors.canvasBg}
-        nodeCanvasObject={paintNode}
-        nodeCanvasObjectMode={() => 'replace'}
-        linkCanvasObject={paintLink}
-        linkCanvasObjectMode={() => 'replace'}
-        onNodeHover={(node: any) => setHovered(node as TopologyNode | null)}
-        onNodeClick={handleNodeClick}
-        onNodeDragEnd={(node: any) => {
-          if (pinnedNodes.has(node.id)) {
-            node.fx = node.x;
-            node.fy = node.y;
-          }
-        }}
-        onBackgroundClick={handleBackgroundClick}
-        warmupTicks={80}
-        cooldownTicks={60}
-        d3AlphaDecay={0.04}
-        d3VelocityDecay={0.4}
-        enableZoomInteraction={true}
-        enablePanInteraction={true}
-        minZoom={0.2}
-        maxZoom={16}
+      <canvas
+        ref={canvasRef}
+        style={{ width: dims.width, height: dims.height, cursor: dragRef.current ? 'grabbing' : 'grab' }}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => { dragRef.current = null; setHovered(null); }}
+        onWheel={handleWheel}
       />
 
       {/* ── Floating Control Panel (Top-Left) ── */}
@@ -493,19 +504,6 @@ export function NetworkGraph() {
             onChange={e => setSearchTerm(e.target.value)}
             className="net-search-input"
           />
-        </div>
-
-        {/* Show Nodes */}
-        <div className="net-control-group">
-          <div className="net-control-label">Show nodes</div>
-          <select
-            value={showNodes}
-            onChange={e => setShowNodes(e.target.value as 'roots' | 'all')}
-            className="net-select"
-          >
-            <option value="roots">Root ADIs only</option>
-            <option value="all">All nodes (slow)</option>
-          </select>
         </div>
 
         {/* Color By */}
@@ -553,14 +551,12 @@ export function NetworkGraph() {
 
         {/* Stats */}
         <div className="net-stats">
-          {filteredNodes.length} nodes &middot; {edgeCount} edges
-          {showNodes === 'roots' && <span style={{ display: 'block', fontSize: 9, color: 'var(--text-tertiary)' }}>({topology.nodes.length} total)</span>}
+          {positionedNodes.length.toLocaleString()} nodes &middot; {filteredEdges.length.toLocaleString()} edges
         </div>
       </div>
 
       {/* ── Floating Legend (Bottom-Left) ── */}
       <div className="net-legend">
-        {/* Edge legend */}
         <div className="net-legend-section">
           {[
             { label: 'Parent-child', color: '#6c8cff', dash: false },
@@ -578,7 +574,6 @@ export function NetworkGraph() {
           ))}
         </div>
 
-        {/* Node legend */}
         <div className="net-legend-section" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 6 }}>
           <span className="net-legend-item">
             <svg width="8" height="8"><circle cx="4" cy="4" r="3" fill="#6c8cff" /></svg>
@@ -589,7 +584,6 @@ export function NetworkGraph() {
             Sub-ADI
           </span>
 
-          {/* Dynamic color legend */}
           {colorBy === 'status' && (
             <>
               <span className="net-legend-item"><span className="net-legend-dot" style={{ background: '#22c55e' }} /> Done</span>
@@ -662,7 +656,6 @@ export function NetworkGraph() {
               </button>
             </div>
 
-            {/* Status */}
             <div className="net-flyout-section">
               <div className="net-flyout-row">
                 <span>Status</span>
@@ -680,14 +673,13 @@ export function NetworkGraph() {
                 <div className="net-flyout-row">
                   <span>Parent</span>
                   <span className="net-flyout-link" onClick={() => {
-                    const parent = topology.nodes.find(n => n.id === selected.parent_url);
-                    if (parent) { setSelected(parent); }
+                    const parent = nodeById.get(selected.parent_url!);
+                    if (parent) setSelected(parent);
                   }}>{shortLabel(selected.parent_url)}</span>
                 </div>
               )}
             </div>
 
-            {/* Metrics */}
             <div className="net-flyout-section">
               <div className="net-flyout-section-title">Accounts</div>
               <div className="net-flyout-metrics">
@@ -718,13 +710,10 @@ export function NetworkGraph() {
               </div>
             </div>
 
-            {/* Connections */}
             <div className="net-flyout-section">
               <div className="net-flyout-section-title">Connections</div>
               {(() => {
-                const connectedEdges = topology.edges.filter(
-                  e => e.source === selected.id || e.target === selected.id
-                );
+                const connectedEdges = edgesByNode.get(selected.id) || [];
                 const byType: Record<string, string[]> = {};
                 for (const e of connectedEdges) {
                   const other = e.source === selected.id ? e.target : e.source;
@@ -738,10 +727,10 @@ export function NetworkGraph() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {targets.slice(0, 8).map(t => (
                         <span key={t} className="net-flyout-conn-tag" onClick={() => {
-                          const node = topology.nodes.find(n => n.id === t);
+                          const node = nodeById.get(t);
                           if (node) {
                             setSelected(node);
-                            fgRef.current?.centerAt(0, 0, 300);
+                            setCamera({ x: dims.width / 2 - node.px * 3, y: dims.height / 2 - node.py * 3, zoom: 3 });
                           }
                         }}>
                           {shortLabel(t).slice(0, 20)}
@@ -756,7 +745,6 @@ export function NetworkGraph() {
               })()}
             </div>
 
-            {/* ADI Detail (from API) */}
             {adiDetail && (
               <div className="net-flyout-section">
                 <div className="net-flyout-section-title">Authorities</div>
@@ -777,17 +765,15 @@ export function NetworkGraph() {
               </div>
             )}
 
-            {/* Actions */}
             <div className="net-flyout-actions">
               <button className="net-flyout-action-btn" onClick={() => {
                 navigate(`/tree?select=${encodeURIComponent(selected.id)}`);
               }}>
                 Open in Tree Explorer
               </button>
-              <button className="net-flyout-action-btn secondary" onClick={() => togglePin(selected.id)}>
-                {pinnedNodes.has(selected.id) ? 'Unpin Node' : 'Pin Node'}
-              </button>
-              <button className="net-flyout-action-btn secondary" onClick={() => handleNodeDoubleClick(selected)}>
+              <button className="net-flyout-action-btn secondary" onClick={() => {
+                setCamera({ x: dims.width / 2 - selected.px * 5, y: dims.height / 2 - selected.py * 5, zoom: 5 });
+              }}>
                 Center & Zoom
               </button>
             </div>
@@ -795,159 +781,10 @@ export function NetworkGraph() {
         )}
       </AnimatePresence>
 
-      {/* ── Minimap (Bottom-Right) ── */}
-      <Minimap
-        nodes={filteredNodes}
-        edges={filteredEdges}
-        getNodeColor={getNodeColor}
-        fgRef={fgRef}
-        isDark={isDark}
-      />
-
       {/* ── Keyboard shortcut hint ── */}
       <div className="net-shortcut-hint">
-        Double-click node to zoom &middot; Drag to rearrange &middot; Scroll to zoom
+        Click node for details &middot; Scroll to zoom &middot; Drag to pan
       </div>
     </div>
-  );
-}
-
-/* ── Minimap Component ──────────────────────────── */
-
-interface MinimapProps {
-  nodes: TopologyNode[];
-  edges: TopologyEdge[];
-  getNodeColor: (n: TopologyNode) => string;
-  fgRef: React.RefObject<any>;
-}
-
-function Minimap({ nodes, edges, getNodeColor, fgRef, isDark }: MinimapProps & { isDark: boolean }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const themeColors = getThemeColors(isDark);
-
-  // Redraw periodically as force simulation settles
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => setTick(t => t + 1), 4000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Pre-build node lookup map for O(1) color lookups
-  const nodeMap = useMemo(() => {
-    const m = new Map<string, TopologyNode>();
-    for (const n of nodes) m.set(n.id, n);
-    return m;
-  }, [nodes]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const SIZE = 150;
-    canvas.width = SIZE;
-    canvas.height = SIZE;
-
-    // Get node positions from force graph
-    const fg = fgRef.current;
-    if (!fg || typeof fg.graphData !== 'function') return;
-    const gd = fg.graphData();
-    const posNodes = gd.nodes as Array<TopologyNode & { x?: number; y?: number }>;
-
-    if (posNodes.length === 0) return;
-
-    // Find bounds
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of posNodes) {
-      if (n.x == null || n.y == null) continue;
-      minX = Math.min(minX, n.x);
-      maxX = Math.max(maxX, n.x);
-      minY = Math.min(minY, n.y);
-      maxY = Math.max(maxY, n.y);
-    }
-
-    if (!isFinite(minX)) return;
-
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
-    const pad = 10;
-    const scale = (SIZE - pad * 2) / Math.max(rangeX, rangeY);
-
-    const tx = (x: number) => pad + (x - minX) * scale + (SIZE - pad * 2 - rangeX * scale) / 2;
-    const ty = (y: number) => pad + (y - minY) * scale + (SIZE - pad * 2 - rangeY * scale) / 2;
-
-    // Clear
-    ctx.fillStyle = isDark ? 'rgba(6,8,15,0.9)' : 'rgba(245,247,250,0.9)';
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Draw edges (skip for large graphs — they blur into noise on a 150px canvas)
-    if (posNodes.length < 5000) {
-      ctx.strokeStyle = 'rgba(108,140,255,0.08)';
-      ctx.lineWidth = 0.3;
-      for (const link of gd.links as any[]) {
-        const s = typeof link.source === 'object' ? link.source : posNodes.find((n: any) => n.id === link.source);
-        const t = typeof link.target === 'object' ? link.target : posNodes.find((n: any) => n.id === link.target);
-        if (!s?.x || !t?.x) continue;
-        ctx.beginPath();
-        ctx.moveTo(tx(s.x), ty(s.y));
-        ctx.lineTo(tx(t.x), ty(t.y));
-        ctx.stroke();
-      }
-    }
-
-    // Draw nodes (sample if too many for minimap performance)
-    const drawNodes = posNodes.length > 5000 ? posNodes.filter((_, i) => i % 3 === 0) : posNodes;
-    for (const n of drawNodes) {
-      if (n.x == null || n.y == null) continue;
-      const srcNode = nodeMap.get(n.id);
-      ctx.beginPath();
-      ctx.arc(tx(n.x), ty(n.y), 1.2, 0, 2 * Math.PI);
-      ctx.fillStyle = srcNode ? getNodeColor(srcNode) : themeColors.canvasTextMuted;
-      ctx.fill();
-    }
-
-    // Border
-    ctx.strokeStyle = 'rgba(108,140,255,0.15)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, SIZE - 1, SIZE - 1);
-
-  }, [nodes, edges, getNodeColor, fgRef, tick, isDark, nodeMap]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="net-minimap"
-      width={150}
-      height={150}
-      onClick={(e) => {
-        // Click minimap to navigate
-        const canvas = canvasRef.current;
-        const fg = fgRef.current;
-        if (!canvas || !fg || typeof fg.graphData !== 'function') return;
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        // Map back to graph coords (approximate)
-        const gd = fg.graphData();
-        const posNodes = gd.nodes as Array<{ x?: number; y?: number }>;
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const n of posNodes) {
-          if (n.x == null || n.y == null) continue;
-          minX = Math.min(minX, n.x);
-          maxX = Math.max(maxX, n.x);
-          minY = Math.min(minY, n.y);
-          maxY = Math.max(maxY, n.y);
-        }
-        if (!isFinite(minX)) return;
-        const rangeX = maxX - minX || 1;
-        const rangeY = maxY - minY || 1;
-        const pad = 10;
-        const scale = (150 - pad * 2) / Math.max(rangeX, rangeY);
-        const gx = (x - pad - (150 - pad * 2 - rangeX * scale) / 2) / scale + minX;
-        const gy = (y - pad - (150 - pad * 2 - rangeY * scale) / 2) / scale + minY;
-        fg.centerAt(gx, gy, 400);
-      }}
-    />
   );
 }
