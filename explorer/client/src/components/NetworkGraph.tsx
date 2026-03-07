@@ -404,10 +404,11 @@ export function NetworkGraph() {
 
   // ── Mouse Handlers ──
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (dragRef.current) {
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
-      setCamera(c => ({ ...c, x: dragRef.current!.camX + dx, y: dragRef.current!.camY + dy }));
+    const drag = dragRef.current;
+    if (drag) {
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      setCamera(c => ({ ...c, x: drag.camX + dx, y: drag.camY + dy }));
       return;
     }
     setHovered(hitTest(e.clientX, e.clientY));
@@ -437,24 +438,25 @@ export function NetworkGraph() {
     }
   }, [hitTest]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  // Attach wheel handler as non-passive so preventDefault works
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setCamera(c => {
-      const newZoom = Math.max(0.1, Math.min(50, c.zoom * factor));
-      const ratio = newZoom / c.zoom;
-      return {
-        zoom: newZoom,
-        x: mx - (mx - c.x) * ratio,
-        y: my - (my - c.y) * ratio,
-      };
-    });
-  }, []);
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setCamera(c => {
+        const newZoom = Math.max(0.1, Math.min(50, c.zoom * factor));
+        const ratio = newZoom / c.zoom;
+        return { zoom: newZoom, x: mx - (mx - c.x) * ratio, y: my - (my - c.y) * ratio };
+      });
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [topology]);
 
   const handleZoomToFit = useCallback(() => {
     if (positionedNodes.length === 0) return;
@@ -570,7 +572,6 @@ export function NetworkGraph() {
         onMouseUp={handleMouseUp}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => { dragRef.current = null; setHovered(null); }}
-        onWheel={handleWheel}
       />
 
       {/* ── Floating Control Panel (Top-Left) ── */}
