@@ -791,7 +791,7 @@ function Minimap({ nodes, edges, getNodeColor, fgRef, isDark }: MinimapProps & {
 
     // Get node positions from force graph
     const fg = fgRef.current;
-    if (!fg) return;
+    if (!fg || typeof fg.graphData !== 'function') return;
     const gd = fg.graphData();
     const posNodes = gd.nodes as Array<TopologyNode & { x?: number; y?: number }>;
 
@@ -862,7 +862,7 @@ function Minimap({ nodes, edges, getNodeColor, fgRef, isDark }: MinimapProps & {
         // Click minimap to navigate
         const canvas = canvasRef.current;
         const fg = fgRef.current;
-        if (!canvas || !fg) return;
+        if (!canvas || !fg || typeof fg.graphData !== 'function') return;
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
