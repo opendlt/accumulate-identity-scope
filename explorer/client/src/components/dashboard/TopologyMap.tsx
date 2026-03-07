@@ -36,31 +36,50 @@ export function TopologyMap({ data, edgeFilters, colorBy }: Props) {
 
   useEffect(() => {
     function measure() {
-      if (containerRef.current) {
-        setDims({
-          width: containerRef.current.clientWidth,
-          height: 420,
-        });
+      const el = containerRef.current;
+      if (el) {
+        const w = el.clientWidth || el.offsetWidth || el.getBoundingClientRect().width;
+        if (w > 0) {
+          setDims({ width: Math.round(w), height: 420 });
+          return;
+        }
       }
+      setDims({ width: Math.max(400, window.innerWidth - 200), height: 420 });
     }
     measure();
+    const raf = requestAnimationFrame(measure);
+    const timer = setTimeout(measure, 200);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   // stabilize after initial layout
   useEffect(() => {
     const fg = fgRef.current;
     if (fg) {
-      fg.d3Force('charge')?.strength(-30);
-      fg.d3Force('link')?.distance(40);
+      const nodeCount = data.nodes.length;
+      const charge = nodeCount > 10000 ? -12 : nodeCount > 3000 ? -20 : -30;
+      fg.d3Force('charge')?.strength(charge);
+      fg.d3Force('link')?.distance(nodeCount > 10000 ? 20 : 40);
     }
   }, [data]);
 
-  const filteredEdges = data.edges.filter(e => edgeFilters[e.type] !== false);
+  // Only show root ADIs by default — sub-ADIs overwhelm the preview
+  const anyEdgeEnabled = Object.values(edgeFilters).some(v => v);
+  const visibleNodes = anyEdgeEnabled ? data.nodes : data.nodes.filter(n => !n.parent_url);
+  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+  const filteredEdges = data.edges.filter(e =>
+    edgeFilters[e.type] !== false &&
+    visibleNodeIds.has(e.source) &&
+    visibleNodeIds.has(e.target)
+  );
 
   const graphData = {
-    nodes: data.nodes.map(n => ({ ...n })),
+    nodes: visibleNodes.map(n => ({ ...n })),
     links: filteredEdges.map(e => ({ ...e })),
   };
 
@@ -160,9 +179,10 @@ export function TopologyMap({ data, edgeFilters, colorBy }: Props) {
         onNodeClick={(node: any) => {
           navigate(`/tree?select=${encodeURIComponent(node.id)}`);
         }}
-        cooldownTicks={120}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
+        warmupTicks={60}
+        cooldownTicks={50}
+        d3AlphaDecay={0.04}
+        d3VelocityDecay={0.4}
         enableZoomInteraction={true}
         enablePanInteraction={true}
         minZoom={0.3}

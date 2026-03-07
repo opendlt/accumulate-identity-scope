@@ -31,10 +31,10 @@ export function Dashboard() {
   });
 
   const [edgeFilters, setEdgeFilters] = useState({
-    hierarchy: true,
-    authority: true,
-    key_sharing: true,
-    delegation: true,
+    hierarchy: false,
+    authority: false,
+    key_sharing: false,
+    delegation: false,
   });
   const [colorBy, setColorBy] = useState('status');
 

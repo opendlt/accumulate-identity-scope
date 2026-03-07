@@ -78,7 +78,7 @@ export function NetworkGraph() {
   const [colorBy, setColorBy] = useState('status');
   const [showNodes, setShowNodes] = useState<'roots' | 'all'>('roots');
   const [edgeFilters, setEdgeFilters] = useState({
-    hierarchy: true,
+    hierarchy: false,
     authority: false,
     key_sharing: false,
     delegation: false,
@@ -98,23 +98,29 @@ export function NetworkGraph() {
     staleTime: 120000,
   });
 
-  // Measure container — re-measure when topology loads (ref changes from loading to graph div)
+  // Measure container — use multiple strategies to get dimensions
   useEffect(() => {
     function measure() {
-      if (containerRef.current) {
-        const w = containerRef.current.clientWidth;
-        const h = containerRef.current.clientHeight;
+      const el = containerRef.current;
+      if (el) {
+        const w = el.clientWidth || el.offsetWidth || el.getBoundingClientRect().width;
+        const h = el.clientHeight || el.offsetHeight || el.getBoundingClientRect().height;
         if (w > 0 && h > 0) {
-          setDims({ width: w, height: h });
+          setDims({ width: Math.round(w), height: Math.round(h) });
+          return;
         }
       }
+      // Fallback: use window size minus sidebar/topbar estimates
+      setDims({ width: window.innerWidth - 64, height: window.innerHeight - 48 });
     }
     measure();
-    // Also measure after a short delay to catch post-layout sizing
     const raf = requestAnimationFrame(measure);
+    // Also retry after a short delay for late layout
+    const timer = setTimeout(measure, 200);
     window.addEventListener('resize', measure);
     return () => {
       cancelAnimationFrame(raf);
+      clearTimeout(timer);
       window.removeEventListener('resize', measure);
     };
   }, [topology]);
