@@ -76,11 +76,12 @@ export function NetworkGraph() {
 
   // Controls
   const [colorBy, setColorBy] = useState('status');
+  const [showNodes, setShowNodes] = useState<'roots' | 'all'>('roots');
   const [edgeFilters, setEdgeFilters] = useState({
     hierarchy: true,
-    authority: true,
-    key_sharing: true,
-    delegation: true,
+    authority: false,
+    key_sharing: false,
+    delegation: false,
   });
 
   // Data
@@ -116,18 +117,6 @@ export function NetworkGraph() {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', measure);
     };
-  }, [topology]);
-
-  // Configure forces — weaker charge for large graphs
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (fg) {
-      const nodeCount = topology?.nodes.length ?? 0;
-      // Scale charge strength down for very large graphs
-      const charge = nodeCount > 10000 ? -12 : nodeCount > 3000 ? -25 : -40;
-      fg.d3Force('charge')?.strength(charge);
-      fg.d3Force('link')?.distance(nodeCount > 10000 ? 20 : 45);
-    }
   }, [topology]);
 
   // Handle select from URL
@@ -172,19 +161,45 @@ export function NetworkGraph() {
     return new Set(topology.nodes.filter(n => n.id.toLowerCase().includes(term)).map(n => n.id));
   }, [searchTerm, topology]);
 
-  // Filter edges
+  // Filter nodes
+  const filteredNodes = useMemo(() => {
+    if (!topology) return [];
+    if (showNodes === 'roots') return topology.nodes.filter(n => !n.parent_url);
+    return topology.nodes;
+  }, [topology, showNodes]);
+
+  const visibleNodeIds = useMemo(() => {
+    return new Set(filteredNodes.map(n => n.id));
+  }, [filteredNodes]);
+
+  // Filter edges — only include edges where both endpoints are visible
   const filteredEdges = useMemo(() => {
     if (!topology) return [];
-    return topology.edges.filter(e => edgeFilters[e.type] !== false);
-  }, [topology, edgeFilters]);
+    return topology.edges.filter(e =>
+      edgeFilters[e.type] !== false &&
+      visibleNodeIds.has(e.source) &&
+      visibleNodeIds.has(e.target)
+    );
+  }, [topology, edgeFilters, visibleNodeIds]);
 
   const graphData = useMemo(() => {
     if (!topology) return { nodes: [], links: [] };
     return {
-      nodes: topology.nodes.map(n => ({ ...n })),
+      nodes: filteredNodes.map(n => ({ ...n })),
       links: filteredEdges.map(e => ({ ...e })),
     };
-  }, [topology, filteredEdges]);
+  }, [topology, filteredNodes, filteredEdges]);
+
+  // Configure forces — scale based on visible node count
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (fg) {
+      const nodeCount = filteredNodes.length;
+      const charge = nodeCount > 10000 ? -12 : nodeCount > 3000 ? -25 : -40;
+      fg.d3Force('charge')?.strength(charge);
+      fg.d3Force('link')?.distance(nodeCount > 10000 ? 20 : 45);
+    }
+  }, [filteredNodes]);
 
   /* ── Node Rendering ───────────────────────────── */
 
@@ -474,6 +489,19 @@ export function NetworkGraph() {
           />
         </div>
 
+        {/* Show Nodes */}
+        <div className="net-control-group">
+          <div className="net-control-label">Show nodes</div>
+          <select
+            value={showNodes}
+            onChange={e => setShowNodes(e.target.value as 'roots' | 'all')}
+            className="net-select"
+          >
+            <option value="roots">Root ADIs only</option>
+            <option value="all">All nodes (slow)</option>
+          </select>
+        </div>
+
         {/* Color By */}
         <div className="net-control-group">
           <div className="net-control-label">Color by</div>
@@ -519,7 +547,8 @@ export function NetworkGraph() {
 
         {/* Stats */}
         <div className="net-stats">
-          {topology.nodes.length} nodes &middot; {edgeCount} edges
+          {filteredNodes.length} nodes &middot; {edgeCount} edges
+          {showNodes === 'roots' && <span style={{ display: 'block', fontSize: 9, color: 'var(--text-tertiary)' }}>({topology.nodes.length} total)</span>}
         </div>
       </div>
 
@@ -762,7 +791,7 @@ export function NetworkGraph() {
 
       {/* ── Minimap (Bottom-Right) ── */}
       <Minimap
-        nodes={topology.nodes}
+        nodes={filteredNodes}
         edges={filteredEdges}
         getNodeColor={getNodeColor}
         fgRef={fgRef}
