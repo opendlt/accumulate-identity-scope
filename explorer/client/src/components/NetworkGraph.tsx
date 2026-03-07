@@ -94,6 +94,7 @@ export function NetworkGraph() {
 
   // Controls
   const [colorBy, setColorBy] = useState('accounts');
+  const [hideEmpty, setHideEmpty] = useState(true);
   const [edgeFilters, setEdgeFilters] = useState({
     hierarchy: false,
     authority: false,
@@ -170,11 +171,14 @@ export function NetworkGraph() {
     return Math.max(1, ...topology.nodes.map(n => n.account_total));
   }, [topology]);
 
-  // Layout positions (pre-computed, no simulation)
+  // Filter + layout positions (pre-computed, no simulation)
   const positionedNodes = useMemo(() => {
     if (!topology) return [];
-    return layoutNodes(topology.nodes);
-  }, [topology]);
+    const nodes = hideEmpty
+      ? topology.nodes.filter(n => n.account_total > 0 || n.token_count > 0 || n.data_count > 0 || n.book_count > 0 || n.entry_count > 0)
+      : topology.nodes;
+    return layoutNodes(nodes);
+  }, [topology, hideEmpty]);
 
   // Index maps for fast lookup
   const nodeById = useMemo(() => {
@@ -196,11 +200,15 @@ export function NetworkGraph() {
     return m;
   }, [topology]);
 
-  // Visible edges
+  // Visible edges — only between visible nodes
   const filteredEdges = useMemo(() => {
     if (!topology) return [];
-    return topology.edges.filter(e => edgeFilters[e.type as keyof typeof edgeFilters]);
-  }, [topology, edgeFilters]);
+    return topology.edges.filter(e =>
+      edgeFilters[e.type as keyof typeof edgeFilters] &&
+      nodeById.has(e.source) &&
+      nodeById.has(e.target)
+    );
+  }, [topology, edgeFilters, nodeById]);
 
   // Search matches
   const searchMatches = useMemo(() => {
@@ -593,6 +601,19 @@ export function NetworkGraph() {
             <option value="depth">Depth (Root/Sub)</option>
             <option value="risk">Key Reuse Risk</option>
           </select>
+        </div>
+
+        {/* Node Filter */}
+        <div className="net-control-group">
+          <label className="net-checkbox-label">
+            <input
+              type="checkbox"
+              checked={hideEmpty}
+              onChange={e => setHideEmpty(e.target.checked)}
+            />
+            <span className="net-checkbox-dot" style={{ background: 'var(--text-tertiary)' }} />
+            Hide empty/reserved ADIs
+          </label>
         </div>
 
         {/* Edge Filters */}
