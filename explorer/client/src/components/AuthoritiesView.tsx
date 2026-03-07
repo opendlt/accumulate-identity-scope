@@ -1,6 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence } from 'framer-motion';
 import { api } from '../api/client';
 import { GlassCard } from './ui/GlassCard';
 import { GlowBadge } from './ui/GlowBadge';
