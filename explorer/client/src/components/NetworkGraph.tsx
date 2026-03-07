@@ -15,11 +15,14 @@ import TopologyWorker from '../workers/topologyWorker?worker';
 const STATUS_COLORS_DARK: Record<string, string> = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#4a5078' };
 const STATUS_COLORS_LIGHT: Record<string, string> = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#8b92ab' };
 
+// Continuous gradient: blue → cyan → yellow → orange → red
 function heatColor(t: number): string {
-  if (t < 0.25) return '#6c8cff';
-  if (t < 0.5) return '#22d3ee';
-  if (t < 0.75) return '#f59e0b';
-  return '#ef4444';
+  // Use log scale to spread out the low end (most nodes have few accounts)
+  const s = Math.min(1, Math.max(0, t));
+  const r = Math.round(s < 0.5 ? s * 2 * 200 + 50 : 239 + (s - 0.5) * 2 * 16);
+  const g = Math.round(s < 0.35 ? 140 + s * 300 : s < 0.65 ? 211 - (s - 0.35) * 400 : 68 - (s - 0.65) * 100);
+  const b = Math.round(s < 0.3 ? 255 - s * 500 : s < 0.6 ? 100 - (s - 0.3) * 200 : 68 - (s - 0.6) * 100);
+  return `rgb(${Math.max(0, Math.min(255, r))},${Math.max(0, Math.min(255, g))},${Math.max(0, Math.min(255, b))})`;
 }
 
 const EDGE_COLORS: Record<string, string> = {
@@ -50,12 +53,9 @@ function layoutNodes(nodes: TopologyNode[]): PositionedNode[] {
   const n = nodes.length;
   if (n === 0) return [];
 
-  // Sort: group by status so same-colored nodes cluster together,
-  // then by account_total (larger nodes toward center)
-  const sorted = [...nodes].sort((a, b) => {
-    if (a.crawl_status !== b.crawl_status) return a.crawl_status.localeCompare(b.crawl_status);
-    return b.account_total - a.account_total;
-  });
+  // Sort by account_total descending — largest nodes at center, smallest at edge
+  // This creates a natural gradient from center outward
+  const sorted = [...nodes].sort((a, b) => b.account_total - a.account_total);
 
   // Spacing factor — controls how spread out the spiral is
   const spacing = 2.8;
@@ -93,7 +93,7 @@ export function NetworkGraph() {
   const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
 
   // Controls
-  const [colorBy, setColorBy] = useState('status');
+  const [colorBy, setColorBy] = useState('accounts');
   const [edgeFilters, setEdgeFilters] = useState({
     hierarchy: false,
     authority: false,
@@ -215,7 +215,12 @@ export function NetworkGraph() {
       const sc = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
       return sc[node.crawl_status] || sc.default;
     }
-    if (colorBy === 'accounts') return heatColor(node.account_total / maxAccounts);
+    if (colorBy === 'accounts') {
+      // Log scale so low-value nodes get color variation too
+      const logVal = Math.log2((node.account_total || 0) + 1);
+      const logMax = Math.log2(maxAccounts + 1);
+      return heatColor(logVal / logMax);
+    }
     if (colorBy === 'depth') return node.parent_url ? '#a78bfa' : '#6c8cff';
     if (colorBy === 'risk') return node.book_count > 2 ? '#ef4444' : node.book_count > 1 ? '#f59e0b' : '#22c55e';
     return '#6c8cff';
