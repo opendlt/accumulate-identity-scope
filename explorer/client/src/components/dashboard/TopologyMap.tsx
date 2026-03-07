@@ -23,9 +23,10 @@ interface Props {
   data: TopologyData;
   edgeFilters: Record<string, boolean>;
   colorBy: string;
+  hideEmpty?: boolean;
 }
 
-export function TopologyMap({ data, edgeFilters, colorBy }: Props) {
+export function TopologyMap({ data, edgeFilters, colorBy, hideEmpty = true }: Props) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<TopologyNode | null>(null);
@@ -68,9 +69,12 @@ export function TopologyMap({ data, edgeFilters, colorBy }: Props) {
     }
   }, [data]);
 
-  // Only show root ADIs by default — sub-ADIs overwhelm the preview
+  // Filter nodes based on controls
   const anyEdgeEnabled = Object.values(edgeFilters).some(v => v);
-  const visibleNodes = anyEdgeEnabled ? data.nodes : data.nodes.filter(n => !n.parent_url);
+  let visibleNodes = anyEdgeEnabled ? data.nodes : data.nodes.filter(n => !n.parent_url);
+  if (hideEmpty) {
+    visibleNodes = visibleNodes.filter(n => n.account_total > 0 || n.token_count > 0 || n.data_count > 0 || n.book_count > 0 || (n.entry_count ?? 0) > 0);
+  }
   const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
   const filteredEdges = data.edges.filter(e =>
     edgeFilters[e.type] !== false &&

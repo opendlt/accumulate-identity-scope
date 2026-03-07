@@ -60,5 +60,5 @@ export const api = {
   getIntelligence: () => fetchJson<Intelligence>(`${BASE}/intelligence`),
 
   getNetworkSummary: () => fetchJson<NetworkSummary>(`${BASE}/network/summary`),
-  getTopology: () => fetchJson<TopologyData>(`${BASE}/network/topology`),
+  getTopology: (activeOnly = true) => fetchJson<TopologyData>(`${BASE}/network/topology${activeOnly ? '?active_only=true' : ''}`),
 };
