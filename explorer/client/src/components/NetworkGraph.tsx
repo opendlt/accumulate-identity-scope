@@ -35,51 +35,38 @@ function shortLabel(url: string) {
   return url.replace('acc://', '').replace('.acme', '');
 }
 
-/* ── Layout: Hilbert curve for spatial locality ── */
-
-function hilbertD2xy(n: number, d: number): [number, number] {
-  let rx: number, ry: number, s: number, t = d;
-  let x = 0, y = 0;
-  for (s = 1; s < n; s *= 2) {
-    rx = (t & 2) > 0 ? 1 : 0;
-    ry = ((t & 1) ^ rx) > 0 ? 0 : 1;
-    if (ry === 0) {
-      if (rx === 1) { x = s - 1 - x; y = s - 1 - y; }
-      const tmp = x; x = y; y = tmp;
-    }
-    x += s * rx;
-    y += s * ry;
-    t = Math.floor(t / 4);
-  }
-  return [x, y];
-}
+/* ── Layout ──────────────────────────────────────── */
 
 interface PositionedNode extends TopologyNode {
   px: number;
   py: number;
 }
 
-function layoutNodes(nodes: TopologyNode[], width: number, height: number): PositionedNode[] {
+// Golden angle spiral — gives a natural sunflower-like distribution
+// Sort nodes by status first so clusters form organically
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+function layoutNodes(nodes: TopologyNode[]): PositionedNode[] {
   const n = nodes.length;
   if (n === 0) return [];
 
-  // Use Hilbert curve for spatially coherent placement
-  // Find smallest power of 2 that fits all nodes in a square grid
-  let order = 1;
-  while (order * order < n) order *= 2;
+  // Sort: group by status so same-colored nodes cluster together,
+  // then by account_total (larger nodes toward center)
+  const sorted = [...nodes].sort((a, b) => {
+    if (a.crawl_status !== b.crawl_status) return a.crawl_status.localeCompare(b.crawl_status);
+    return b.account_total - a.account_total;
+  });
 
-  const pad = 40;
-  const usableW = width - pad * 2;
-  const usableH = height - pad * 2;
-  const cellW = usableW / order;
-  const cellH = usableH / order;
+  // Spacing factor — controls how spread out the spiral is
+  const spacing = 2.8;
 
-  return nodes.map((node, i) => {
-    const [hx, hy] = hilbertD2xy(order, i);
+  return sorted.map((node, i) => {
+    const r = spacing * Math.sqrt(i);
+    const theta = i * GOLDEN_ANGLE;
     return {
       ...node,
-      px: pad + hx * cellW + cellW / 2,
-      py: pad + hy * cellH + cellH / 2,
+      px: r * Math.cos(theta),
+      py: r * Math.sin(theta),
     };
   });
 }
@@ -184,10 +171,9 @@ export function NetworkGraph() {
   }, [topology]);
 
   // Layout positions (pre-computed, no simulation)
-  // Use a fixed large virtual space so layout is stable regardless of screen dims
   const positionedNodes = useMemo(() => {
     if (!topology) return [];
-    return layoutNodes(topology.nodes, 4000, 4000);
+    return layoutNodes(topology.nodes);
   }, [topology]);
 
   // Index maps for fast lookup
