@@ -117,7 +117,7 @@ export function NetworkGraph() {
       if (e.data.type === 'done') { setTopology(e.data.data); setLoadStatus(''); }
       if (e.data.type === 'error') { setLoadError(e.data.message); setLoadStatus(''); }
     };
-    worker.postMessage('start');
+    worker.postMessage({ activeOnly: true });
     return () => worker.terminate();
   }, [loadRequested]);
 
@@ -529,8 +529,7 @@ export function NetworkGraph() {
             Network Topology
           </div>
           <div style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}>
-            This view renders 43,000+ identity nodes on an interactive canvas.
-            Loading requires downloading ~9 MB of data.
+            Interactive canvas view of active identity nodes and their relationships.
           </div>
           <button
             onClick={() => setLoadRequested(true)}

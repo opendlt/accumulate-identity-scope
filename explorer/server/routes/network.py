@@ -1,6 +1,6 @@
 """Network summary and topology endpoints optimized for the dashboard."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from ..database import get_db
 
 router = APIRouter(prefix="/api/network", tags=["network"])
@@ -157,19 +157,28 @@ def get_network_summary():
 
 
 @router.get("/topology")
-def get_topology():
-    """Get full network topology for force-directed graph.
+def get_topology(active_only: bool = Query(False, description="Exclude empty/reserved ADIs with no accounts")):
+    """Get network topology for visualization.
 
     Returns nodes (ADIs) and edges (parent-child + cross-ADI authority).
+    Use active_only=true to exclude empty ADIs for faster loading.
     """
     with get_db() as conn:
+        # Build query — optionally filter to active ADIs only
+        where_clause = ""
+        if active_only:
+            where_clause = "HAVING token_count > 0 OR data_count > 0 OR book_count > 0 OR (a.entry_count IS NOT NULL AND a.entry_count > 0)"
+
         nodes = []
-        for r in conn.execute("""
+        for r in conn.execute(f"""
             SELECT a.url, a.parent_url, a.entry_count, a.crawl_status,
                 (SELECT COUNT(*) FROM token_accounts t WHERE t.adi_url = a.url) as token_count,
                 (SELECT COUNT(*) FROM data_accounts d WHERE d.adi_url = a.url) as data_count,
                 (SELECT COUNT(*) FROM key_books kb WHERE kb.adi_url = a.url) as book_count
-            FROM adis a ORDER BY a.url
+            FROM adis a
+            GROUP BY a.url
+            {where_clause}
+            ORDER BY a.url
         """):
             nodes.append({
                 "id": r["url"],

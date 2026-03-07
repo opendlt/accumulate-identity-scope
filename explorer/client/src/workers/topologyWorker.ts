@@ -2,13 +2,15 @@
 
 const BASE = '/api';
 
-self.onmessage = async () => {
+self.onmessage = async (e) => {
   try {
+    const activeOnly = e.data?.activeOnly !== false; // default true
+    const url = `${BASE}/network/topology${activeOnly ? '?active_only=true' : ''}`;
     self.postMessage({ type: 'status', message: 'Fetching topology data...' });
-    const res = await fetch(`${BASE}/network/topology`);
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`API error: ${res.status}`);
 
-    self.postMessage({ type: 'status', message: 'Parsing 9 MB of JSON...' });
+    self.postMessage({ type: 'status', message: 'Parsing topology JSON...' });
     const text = await res.text();
 
     self.postMessage({ type: 'status', message: 'Building node index...' });
