@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { GlowBadge } from './ui/GlowBadge';
 import { RingGauge } from './ui/RingGauge';
 import { AnimatedCounter } from './ui/AnimatedCounter';
+import { PageLoader } from './ui/PageLoader';
 import type {
   TreeNode as TreeNodeType, ADI, TokenAccount, DataAccount,
   KeyBook, KeyPage, TokenIssuer, AuthorityRecord,
@@ -992,17 +993,7 @@ export function TreeExplorer() {
   }, [tree]);
 
   if (isLoading) {
-    return (
-      <div className="tree-layout-3">
-        <div className="shimmer" style={{ height: '100%', borderRadius: 16 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="shimmer" style={{ height: 80, borderRadius: 12 }} />
-          <div className="shimmer" style={{ height: 60, borderRadius: 12 }} />
-          <div className="shimmer" style={{ height: 300, borderRadius: 12 }} />
-        </div>
-        <div className="shimmer" style={{ height: '100%', borderRadius: 16 }} />
-      </div>
-    );
+    return <PageLoader message="Loading identity tree..." />;
   }
   if (!tree) return null;
 

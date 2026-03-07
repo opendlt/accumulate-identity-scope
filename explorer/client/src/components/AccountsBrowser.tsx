@@ -8,6 +8,7 @@ import { GlassCard } from './ui/GlassCard';
 import { GlowBadge } from './ui/GlowBadge';
 import { StatOrb } from './ui/StatOrb';
 import { RingGauge } from './ui/RingGauge';
+import { PageLoader } from './ui/PageLoader';
 import { HeatStrip } from './ui/HeatStrip';
 import { AnimatedCounter } from './ui/AnimatedCounter';
 import { ExportButton, toCSV } from './ui/ExportButton';
@@ -238,11 +239,7 @@ export function AccountsBrowser() {
           {tab === 'token' && (
             <GlassCard delay={0.1}>
               {tokensLoading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="shimmer" style={{ height: 36, borderRadius: 6 }} />
-                  ))}
-                </div>
+                <PageLoader message="Loading token accounts..." />
               ) : tokenData && tokenData.items.length === 0 ? (
                 <EmptyState icon={'\u25A3'} title="No token accounts found" description={searchFilter ? `No results matching "${searchFilter}".` : 'No token accounts in the database.'} compact />
               ) : tokenData && (
@@ -294,11 +291,7 @@ export function AccountsBrowser() {
           {tab === 'data' && (
             <GlassCard delay={0.1}>
               {dataLoading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="shimmer" style={{ height: 36, borderRadius: 6 }} />
-                  ))}
-                </div>
+                <PageLoader message="Loading data accounts..." />
               ) : dataData && dataData.items.length === 0 ? (
                 <EmptyState icon={'\u25A2'} title="No data accounts found" description={searchFilter ? `No results matching "${searchFilter}".` : 'No data accounts in the database.'} compact />
               ) : dataData && (

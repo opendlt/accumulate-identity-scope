@@ -10,6 +10,7 @@ import { RingGauge } from './ui/RingGauge';
 import { AnimatedCounter } from './ui/AnimatedCounter';
 import { HeatStrip } from './ui/HeatStrip';
 import { ErrorState } from './ui/ErrorState';
+import { PageLoader } from './ui/PageLoader';
 import type { Intelligence } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { getTooltipStyle, getThemeColors } from '../hooks/useThemeColors';
@@ -953,13 +954,7 @@ export function IntelligenceView() {
   }
 
   if (isLoading || !data) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className="shimmer" style={{ height: 100, borderRadius: 16 }} />
-        ))}
-      </div>
-    );
+    return <PageLoader message="Loading intelligence data..." />;
   }
 
   const sections = [

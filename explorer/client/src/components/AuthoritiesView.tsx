@@ -8,6 +8,7 @@ import { HeatStrip } from './ui/HeatStrip';
 import { AnimatedCounter } from './ui/AnimatedCounter';
 import { ExportButton, toCSV } from './ui/ExportButton';
 import { EmptyState } from './ui/EmptyState';
+import { PageLoader } from './ui/PageLoader';
 import { getEntityColor } from '../hooks/useEntityColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeColors } from '../hooks/useThemeColors';
@@ -127,11 +128,7 @@ export function AuthoritiesView() {
           </div>
 
           {tableLoading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="shimmer" style={{ height: 32, borderRadius: 6 }} />
-              ))}
-            </div>
+            <PageLoader message="Loading authority records..." />
           ) : tableData && tableData.items.length === 0 ? (
             <EmptyState icon={'\u2B21'} title="No authority records found" description={tableFilter ? `No results matching "${tableFilter}".` : 'No authority records in the database.'} compact />
           ) : tableData && (

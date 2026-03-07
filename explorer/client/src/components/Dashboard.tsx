@@ -10,6 +10,7 @@ import { GlowBadge } from './ui/GlowBadge';
 import { AnimatedCounter } from './ui/AnimatedCounter';
 import { ErrorState } from './ui/ErrorState';
 import { getEntityColor } from '../hooks/useEntityColor';
+import { PageLoader } from './ui/PageLoader';
 import { TopologyMap } from './dashboard/TopologyMap';
 import { KeyReuseCard, TokenEconomyCard, AuthorityHotspotCard, DepthCard } from './dashboard/InsightCards';
 import { useTheme } from '../contexts/ThemeContext';
@@ -44,13 +45,7 @@ export function Dashboard() {
   }
 
   if (isLoading || !data) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {[120, 160, 420, 200].map((h, i) => (
-          <div key={i} className="shimmer" style={{ height: h, borderRadius: 16 }} />
-        ))}
-      </div>
-    );
+    return <PageLoader message="Loading command center..." />;
   }
 
   const c = data.counts;
@@ -249,35 +244,8 @@ export function Dashboard() {
         delay={0.2}
       >
         {topoLoading || !topology ? (
-          <div style={{
-            height: 420, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--bg-elevated)', flexDirection: 'column', gap: 16,
-          }}>
-            <div style={{ position: 'relative', width: 64, height: 64 }}>
-              <div style={{
-                position: 'absolute', inset: 0, borderRadius: '50%',
-                border: '2px solid var(--border-subtle)',
-              }} />
-              <div style={{
-                position: 'absolute', inset: 0, borderRadius: '50%',
-                border: '2px solid transparent', borderTopColor: 'var(--color-adi)',
-                animation: 'spinSlow 1s linear infinite',
-              }} />
-              <div style={{
-                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-adi)" strokeWidth="1.5" strokeLinecap="round" style={{ animation: 'breathe 2s ease-in-out infinite' }}>
-                  <circle cx="12" cy="12" r="2" fill="var(--color-adi)" />
-                  <circle cx="6" cy="6" r="1.5" fill="var(--color-token)" />
-                  <circle cx="18" cy="6" r="1.5" fill="var(--color-data)" />
-                  <line x1="12" y1="12" x2="6" y2="6" />
-                  <line x1="12" y1="12" x2="18" y2="6" />
-                </svg>
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
-              Loading network topology...
-            </div>
+          <div style={{ height: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-elevated)', borderRadius: 12 }}>
+            <PageLoader message="Loading network topology..." />
           </div>
         ) : (
           <TopologyMap data={topology} edgeFilters={edgeFilters} colorBy={colorBy} hideEmpty={hideEmpty} />

@@ -8,6 +8,7 @@ import { RingGauge } from './ui/RingGauge';
 import { StatOrb } from './ui/StatOrb';
 import { AnimatedCounter } from './ui/AnimatedCounter';
 import { ExportButton, toCSV } from './ui/ExportButton';
+import { PageLoader } from './ui/PageLoader';
 import { EmptyState } from './ui/EmptyState';
 import { ErrorState } from './ui/ErrorState';
 import { getEntityColor } from '../hooks/useEntityColor';
@@ -150,11 +151,7 @@ export function KeysView() {
         {isError ? (
           <ErrorState title="Failed to load key books" onRetry={() => refetch()} />
         ) : isLoading ? (
-          <div className="kv-book-grid">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="shimmer" style={{ height: 100, borderRadius: 10 }} />
-            ))}
-          </div>
+          <PageLoader message="Loading key books..." />
         ) : filteredBooks.length === 0 ? (
           <EmptyState icon={'\u2B22'} title="No key books found" description={searchFilter ? `No results matching "${searchFilter}".` : 'No key books in the database.'} compact />
         ) : (
