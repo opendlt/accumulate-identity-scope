@@ -102,8 +102,8 @@ export function NetworkGraph() {
     delegation: false,
   });
 
-  // Data — auto-loaded via Web Worker to keep UI responsive
-  const [loadRequested, setLoadRequested] = useState(true);
+  // Data — lazy loaded via Web Worker, user clicks to start
+  const [loadRequested, setLoadRequested] = useState(false);
   const [topology, setTopology] = useState<TopologyData | null>(null);
   const [loadStatus, setLoadStatus] = useState<string>('');
   const [loadError, setLoadError] = useState<string>('');
@@ -516,7 +516,72 @@ export function NetworkGraph() {
     }
   }, [positionedNodes, handleZoomToFit]);
 
-  /* ── Loading / Error State ────────────────────── */
+  /* ── Landing / Loading / Error State ─────────── */
+
+  if (!loadRequested) {
+    return (
+      <div className="network-graph-fullscreen" ref={containerRef}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '100%', flexDirection: 'column', gap: 20,
+        }}>
+          {/* Decorative pulsing rings */}
+          <div style={{ position: 'relative', width: 140, height: 140 }}>
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              border: '2px solid var(--color-adi)', opacity: 0.15,
+              animation: 'breathe 3s ease-in-out infinite',
+            }} />
+            <div style={{
+              position: 'absolute', inset: 16, borderRadius: '50%',
+              border: '2px solid var(--color-adi)', opacity: 0.25,
+              animation: 'breathe 3s ease-in-out infinite 0.4s',
+            }} />
+            <div style={{
+              position: 'absolute', inset: 32, borderRadius: '50%',
+              border: '2px solid var(--color-adi)', opacity: 0.35,
+              animation: 'breathe 3s ease-in-out infinite 0.8s',
+            }} />
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-adi)" strokeWidth="1.5" strokeLinecap="round">
+                <circle cx="12" cy="12" r="2" fill="var(--color-adi)" />
+                <circle cx="6" cy="6" r="1.5" fill="var(--color-token)" />
+                <circle cx="18" cy="6" r="1.5" fill="var(--color-data)" />
+                <circle cx="12" cy="19" r="1.5" fill="var(--color-key)" />
+                <line x1="12" y1="12" x2="6" y2="6" />
+                <line x1="12" y1="12" x2="18" y2="6" />
+                <line x1="12" y1="12" x2="12" y2="19" />
+              </svg>
+            </div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+              Network Topology
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 340, lineHeight: 1.6 }}>
+              Interactive canvas view of identity nodes and their relationships.
+            </div>
+          </div>
+          <button
+            onClick={() => setLoadRequested(true)}
+            style={{
+              background: 'var(--color-adi)', color: '#fff', border: 'none',
+              borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600,
+              cursor: 'pointer', letterSpacing: '0.02em',
+              transition: 'transform 0.15s, box-shadow 0.15s',
+              boxShadow: '0 4px 20px rgba(108,140,255,0.25)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+          >
+            Load Network Graph
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loadError) {
     return (
@@ -547,12 +612,39 @@ export function NetworkGraph() {
       <div className="network-graph-fullscreen" ref={containerRef}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: '100%', color: 'var(--text-tertiary)', flexDirection: 'column', gap: 16,
+          height: '100%', flexDirection: 'column', gap: 20,
         }}>
-          <div className="shimmer" style={{ width: 120, height: 120, borderRadius: '50%' }} />
-          <div style={{ fontSize: 14 }}>{loadStatus || 'Loading...'}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-            Data is loading in a background thread — the app stays responsive.
+          {/* Spinning loader */}
+          <div style={{ position: 'relative', width: 80, height: 80 }}>
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              border: '3px solid var(--border-subtle)',
+            }} />
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              border: '3px solid transparent', borderTopColor: 'var(--color-adi)',
+              animation: 'spinSlow 1s linear infinite',
+            }} />
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-adi)" strokeWidth="1.5" strokeLinecap="round" style={{ animation: 'breathe 2s ease-in-out infinite' }}>
+                <circle cx="12" cy="12" r="2" fill="var(--color-adi)" />
+                <circle cx="6" cy="6" r="1.5" fill="var(--color-token)" />
+                <circle cx="18" cy="6" r="1.5" fill="var(--color-data)" />
+                <line x1="12" y1="12" x2="6" y2="6" />
+                <line x1="12" y1="12" x2="18" y2="6" />
+              </svg>
+            </div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+              {loadStatus || 'Loading topology...'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+              Building the network in a background thread
+            </div>
           </div>
         </div>
       </div>
