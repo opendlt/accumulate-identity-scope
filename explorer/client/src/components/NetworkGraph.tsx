@@ -102,8 +102,8 @@ export function NetworkGraph() {
     delegation: false,
   });
 
-  // Data — lazy loaded via Web Worker to keep UI responsive
-  const [loadRequested, setLoadRequested] = useState(false);
+  // Data — auto-loaded via Web Worker to keep UI responsive
+  const [loadRequested, setLoadRequested] = useState(true);
   const [topology, setTopology] = useState<TopologyData | null>(null);
   const [loadStatus, setLoadStatus] = useState<string>('');
   const [loadError, setLoadError] = useState<string>('');
@@ -516,35 +516,7 @@ export function NetworkGraph() {
     }
   }, [positionedNodes, handleZoomToFit]);
 
-  /* ── Landing / Loading State ────────────────────── */
-
-  if (!loadRequested) {
-    return (
-      <div className="network-graph-fullscreen" ref={containerRef}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: '100%', color: 'var(--text-tertiary)', flexDirection: 'column', gap: 16,
-        }}>
-          <div style={{ fontSize: 48, fontWeight: 800, color: 'var(--color-adi)', opacity: 0.3 }}>
-            Network Topology
-          </div>
-          <div style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}>
-            Interactive canvas view of active identity nodes and their relationships.
-          </div>
-          <button
-            onClick={() => setLoadRequested(true)}
-            style={{
-              marginTop: 8, background: 'var(--color-adi)', color: '#fff', border: 'none',
-              borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600,
-              cursor: 'pointer', letterSpacing: '0.02em',
-            }}
-          >
-            Load Network Graph
-          </button>
-        </div>
-      </div>
-    );
-  }
+  /* ── Loading / Error State ────────────────────── */
 
   if (loadError) {
     return (
@@ -556,7 +528,7 @@ export function NetworkGraph() {
           <div style={{ fontSize: 16, fontWeight: 600 }}>Failed to load topology</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{loadError}</div>
           <button
-            onClick={() => { setLoadError(''); setLoadRequested(true); }}
+            onClick={() => { setLoadError(''); setTopology(null); setLoadRequested(false); setTimeout(() => setLoadRequested(true), 0); }}
             style={{
               marginTop: 8, background: 'var(--bg-elevated)', color: 'var(--text-primary)',
               border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 20px',
@@ -632,22 +604,9 @@ export function NetworkGraph() {
           </select>
         </div>
 
-        {/* Node Filter */}
+        {/* Display Filters */}
         <div className="net-control-group">
-          <label className="net-checkbox-label">
-            <input
-              type="checkbox"
-              checked={hideEmpty}
-              onChange={e => setHideEmpty(e.target.checked)}
-            />
-            <span className="net-checkbox-dot" style={{ background: 'var(--text-tertiary)' }} />
-            Hide empty/reserved ADIs
-          </label>
-        </div>
-
-        {/* Edge Filters */}
-        <div className="net-control-group">
-          <div className="net-control-label">Edges</div>
+          <div className="net-control-label">Display</div>
           {([
             { key: 'hierarchy', label: 'Parent-child', color: '#6c8cff' },
             { key: 'authority', label: 'Authority', color: '#f59e0b' },
@@ -664,6 +623,15 @@ export function NetworkGraph() {
               {label}
             </label>
           ))}
+          <label className="net-checkbox-label" style={{ marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={hideEmpty}
+              onChange={e => setHideEmpty(e.target.checked)}
+            />
+            <span className="net-checkbox-dot" style={{ background: 'var(--text-tertiary)' }} />
+            Hide empty/reserved ADIs
+          </label>
         </div>
 
         {/* Actions */}
