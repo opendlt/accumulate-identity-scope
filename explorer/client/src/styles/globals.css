@@ -1787,6 +1787,60 @@ input, select, textarea { font-family: inherit; }
   .app-sidebar { display: none; }
   .grid-stats { grid-template-columns: repeat(2, 1fr); }
   .app-layout { overflow: visible; }
+
+  /* Network graph: remove sidebar offset since sidebar is hidden */
+  .network-graph-fullscreen,
+  .app-sidebar.collapsed ~ .app-content-area .network-graph-fullscreen {
+    left: 0;
+  }
+
+  /* Control panel: collapsible drawer at bottom-left, compact */
+  .net-control-panel {
+    top: auto;
+    bottom: 32px;
+    left: 8px;
+    width: 180px;
+    max-height: 50vh;
+    overflow-y: auto;
+    padding: 10px;
+    font-size: 10px;
+  }
+
+  /* Flyout: full-width bottom sheet instead of right panel */
+  .net-flyout {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 55vh;
+    border-left: none;
+    border-top: 1px solid rgba(108, 140, 255, 0.10);
+    border-radius: 16px 16px 0 0;
+  }
+
+  .net-flyout-metrics {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  /* Tooltip: top-center on mobile */
+  .net-tooltip {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 160px;
+    max-width: calc(100vw - 32px);
+  }
+
+  /* Legend: hide on mobile (too cramped) */
+  .net-legend {
+    display: none;
+  }
+
+  /* Shortcut hint: adjust for bottom nav peek */
+  .net-shortcut-hint {
+    bottom: 28px;
+  }
 }
 
 /* ============================================
