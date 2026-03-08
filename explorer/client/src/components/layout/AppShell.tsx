@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './Sidebar';
+import { MobileBottomNav } from './MobileBottomNav';
 import { Topbar } from './Topbar';
 import { CommandPalette } from './CommandPalette';
 import { api } from '../../api/client';
@@ -47,6 +48,7 @@ export function AppShell({ children }: AppShellProps) {
           {children}
         </main>
       </div>
+      <MobileBottomNav />
       <CommandPalette open={cmdOpen} onClose={handleCloseSearch} />
     </div>
   );

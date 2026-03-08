@@ -1786,6 +1786,7 @@ input, select, textarea { font-family: inherit; }
 @media (max-width: 768px) {
   .app-sidebar { display: none; }
   .grid-stats { grid-template-columns: repeat(2, 1fr); }
+  .app-layout { overflow: visible; }
 }
 
 /* ============================================
@@ -3670,6 +3671,151 @@ button:focus-visible {
   background: var(--bg-elevated);
   border-color: var(--border-default);
   color: var(--text-primary);
+}
+
+/* ============================================
+   MOBILE BOTTOM NAV
+   ============================================ */
+
+/* Hidden on desktop */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 60;
+    background: var(--bg-deep);
+    border-top: 1px solid var(--border-subtle);
+    transform: translateY(calc(100% - 20px));
+    transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
+    will-change: transform;
+    /* safe area for notched phones */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mobile-bottom-nav.expanded {
+    transform: translateY(0);
+  }
+
+  /* Pull handle */
+  .mobile-nav-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+
+  .mobile-nav-handle-bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-tertiary);
+    opacity: 0.5;
+    transition: opacity 0.2s;
+  }
+
+  .mobile-nav-handle:active .mobile-nav-handle-bar {
+    opacity: 0.8;
+  }
+
+  /* Scrollable track */
+  .mobile-nav-track {
+    display: flex;
+    gap: 2px;
+    padding: 4px 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    /* hide scrollbar but keep functionality */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .mobile-nav-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Nav item */
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 68px;
+    padding: 8px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.15s ease-out;
+    scroll-snap-align: center;
+    flex-shrink: 0;
+    gap: 4px;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-nav-item:active {
+    transform: scale(0.92);
+  }
+
+  .mobile-nav-item.active {
+    color: var(--color-adi);
+    background: var(--color-adi-dim);
+  }
+
+  .mobile-nav-item.active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--color-adi);
+  }
+
+  .mobile-nav-icon {
+    font-size: 20px;
+    line-height: 1;
+    opacity: 0.7;
+  }
+
+  .mobile-nav-item.active .mobile-nav-icon {
+    opacity: 1;
+  }
+
+  .mobile-nav-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  /* Add bottom padding to main content so it's not hidden behind the nav peek */
+  .app-main {
+    padding-bottom: 32px;
+  }
+
+  /* Hide gradient glow left offset on mobile (sidebar is gone) */
+  .app-main::before {
+    left: 0 !important;
+  }
 }
 
 /* ============================================
