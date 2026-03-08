@@ -36,8 +36,6 @@ explorer/client/.vite/
 Thumbs.db
 desktop.ini
 
-# Docker
-explorer/Dockerfile
 
 # Planning docs (local only)
 EXPLORER_REDESIGN_PLAN.md

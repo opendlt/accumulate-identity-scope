@@ -1,0 +1,9 @@
+services:
+  explorer:
+    build: .
+    container_name: accumulate-identity-explorer
+    restart: unless-stopped
+    ports:
+      - "8060:8060"
+    volumes:
+      - ../identity_tree_complete.db:/data/identity_tree_complete.db:ro
