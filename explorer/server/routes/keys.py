@@ -1,10 +1,44 @@
 """Key book, key page, and key entry endpoints."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 from ..database import get_db, rows_to_list, row_to_dict
+from ..cache import cached
 
 router = APIRouter(prefix="/api", tags=["keys"])
+
+# key_entries.last_used_on is stored in MICROSECONDS since the Unix epoch.
+_USED_SECONDS = "last_used_on / 1000000.0"
+_RECENT_WINDOW_DAYS = 90
+
+
+@router.get("/key-activity-timeline")
+@cached()
+def key_activity_timeline():
+    """Server-side key recency buckets over ALL key entries (recent / old / never).
+
+    Replaces a client-side aggregation that fetched 500 key pages and silently
+    truncated, and fixes the unit handling (last_used_on is microseconds).
+    """
+    window = _RECENT_WINDOW_DAYS * 86400
+    with get_db() as conn:
+        row = conn.execute(f"""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN last_used_on IS NULL OR last_used_on = 0 THEN 1 ELSE 0 END) AS never,
+                SUM(CASE WHEN last_used_on > 0
+                          AND (strftime('%s','now') - ({_USED_SECONDS})) < ? THEN 1 ELSE 0 END) AS recent,
+                SUM(CASE WHEN last_used_on > 0
+                          AND (strftime('%s','now') - ({_USED_SECONDS})) >= ? THEN 1 ELSE 0 END) AS old
+            FROM key_entries
+        """, (window, window)).fetchone()
+    return {
+        "total": row["total"] or 0,
+        "recent": row["recent"] or 0,
+        "old": row["old"] or 0,
+        "never": row["never"] or 0,
+        "recent_window_days": _RECENT_WINDOW_DAYS,
+    }
 
 
 @router.get("/key-books")
@@ -39,7 +73,7 @@ def get_key_book(url: str):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM key_books WHERE url = ?", (url,)).fetchone()
         if not row:
-            return {"error": "Key book not found"}
+            raise HTTPException(status_code=404, detail=f"Key book not found: {url}")
         book = row_to_dict(row)
 
         pages = []
@@ -109,7 +143,7 @@ def get_key_page(url: str):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM key_pages WHERE url = ?", (url,)).fetchone()
         if not row:
-            return {"error": "Key page not found"}
+            raise HTTPException(status_code=404, detail=f"Key page not found: {url}")
         page = row_to_dict(row)
         page["keys"] = [
             dict(r) for r in conn.execute(

@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Query
 from typing import Optional
 from ..database import get_db
+from ..cache import cached
 
 router = APIRouter(prefix="/api/authorities", tags=["authorities"])
 
@@ -40,6 +41,7 @@ def list_authorities(
 
 
 @router.get("/graph")
+@cached()
 def authority_graph(adi_url: Optional[str] = None):
     """Get authority relationships as nodes and edges for graph visualization."""
     with get_db() as conn:
@@ -70,41 +72,44 @@ def authority_graph(adi_url: Optional[str] = None):
                 "disabled": bool(r["disabled"]),
             })
 
-        # Classify nodes
-        node_list = []
-        for url in sorted(nodes):
-            node_type = "unknown"
-            row = conn.execute("SELECT 'adi' as t FROM adis WHERE url = ? UNION ALL SELECT 'key_book' FROM key_books WHERE url = ? UNION ALL SELECT 'token_account' FROM token_accounts WHERE url = ? UNION ALL SELECT 'data_account' FROM data_accounts WHERE url = ?",
-                               (url, url, url, url)).fetchone()
-            if row:
-                node_type = row["t"]
-            node_list.append({"id": url, "type": node_type})
+        # Classify nodes in bulk instead of one UNION query per node (was an
+        # O(nodes) N+1 — ~50k round trips on the full graph). Scan each source
+        # table once and keep only urls that appear in the node set. Assignment
+        # order encodes type priority: adi > key_book > token_account >
+        # data_account (last write wins).
+        type_map: dict[str, str] = {}
+        for table, label in (
+            ("data_accounts", "data_account"),
+            ("token_accounts", "token_account"),
+            ("key_books", "key_book"),
+            ("adis", "adi"),
+        ):
+            for (url,) in conn.execute(f"SELECT url FROM {table}"):
+                if url in nodes:
+                    type_map[url] = label
+
+        node_list = [{"id": url, "type": type_map.get(url, "unknown")} for url in sorted(nodes)]
 
     return {"nodes": node_list, "edges": edges}
 
 
 @router.get("/flows")
+@cached()
 def authority_flows():
     """Optimized data for Sankey diagram and chord diagram visualizations."""
     with get_db() as conn:
         # --- Sankey: ADI -> authority book flows ---
-        # Each flow = one ADI's accounts governed by one authority book
+        # Each flow = the accounts owned by one ADI that are governed by one
+        # authority book. Uses the denormalized adi_url (the account's owning
+        # ADI) instead of a `LIKE adi_url || '/%'` self-join against all ADIs.
         sankey_flows = []
         for r in conn.execute("""
-            SELECT
-                CASE
-                    WHEN a.parent_url IS NULL THEN aa.account_url
-                    ELSE COALESCE(a.parent_url, aa.account_url)
-                END as adi_group,
-                aa.authority_url,
-                aa.is_implied,
-                COUNT(*) as account_count
+            SELECT aa.adi_url AS adi_group,
+                   aa.authority_url,
+                   aa.is_implied,
+                   COUNT(*) as account_count
             FROM account_authorities aa
-            LEFT JOIN adis a ON (
-                aa.account_url = a.url
-                OR aa.account_url LIKE a.url || '/%'
-            )
-            GROUP BY adi_group, aa.authority_url, aa.is_implied
+            GROUP BY aa.adi_url, aa.authority_url, aa.is_implied
             ORDER BY account_count DESC
             LIMIT 60
         """):
@@ -116,21 +121,16 @@ def authority_flows():
             })
 
         # --- Chord: cross-ADI authority matrix ---
-        # Which ADIs share authority relationships (their accounts governed by same books)
+        # Which ADIs' accounts are governed by books owned by a different ADI.
         chord_data = []
         for r in conn.execute("""
-            SELECT
-                kb.adi_url as book_owner,
-                a.url as governed_adi,
-                COUNT(DISTINCT aa.account_url) as link_count
+            SELECT kb.adi_url as book_owner,
+                   aa.adi_url as governed_adi,
+                   COUNT(DISTINCT aa.account_url) as link_count
             FROM account_authorities aa
             JOIN key_books kb ON aa.authority_url = kb.url
-            JOIN adis a ON (
-                aa.account_url = a.url
-                OR aa.account_url LIKE a.url || '/%'
-            )
-            WHERE kb.adi_url != a.url
-            GROUP BY kb.adi_url, a.url
+            WHERE aa.adi_url IS NOT NULL AND kb.adi_url != aa.adi_url
+            GROUP BY kb.adi_url, aa.adi_url
             HAVING link_count > 0
             ORDER BY link_count DESC
             LIMIT 40

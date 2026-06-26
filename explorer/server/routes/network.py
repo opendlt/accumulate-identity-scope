@@ -2,19 +2,25 @@
 
 from fastapi import APIRouter, Query
 from ..database import get_db
+from ..cache import cached
 
 router = APIRouter(prefix="/api/network", tags=["network"])
 
 
 @router.get("/summary")
+@cached()
 def get_network_summary():
     """Aggregated network summary optimized for the Command Center dashboard."""
     with get_db() as conn:
         # --- Counts ---
         counts = {}
         for table in ("adis", "token_accounts", "data_accounts", "token_issuers",
-                       "key_books", "key_pages", "key_entries", "account_authorities"):
-            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                       "key_books", "key_pages", "key_entries", "account_authorities",
+                       "lite_accounts"):
+            try:
+                counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            except Exception:
+                counts[table] = 0
 
         # --- Health ---
         adi_status = {}
@@ -50,11 +56,13 @@ def get_network_summary():
         # --- Authority stats ---
         auth_explicit = conn.execute("SELECT COUNT(*) FROM account_authorities WHERE is_implied=0").fetchone()[0]
         auth_implied = conn.execute("SELECT COUNT(*) FROM account_authorities WHERE is_implied=1").fetchone()[0]
+        # Books that govern accounts owned by a different ADI than the book itself.
+        # Uses the denormalized account_authorities.adi_url (equality) instead of a
+        # `LIKE adi_url || '/%'` scan against all 43k ADIs.
         cross_adi_count = conn.execute("""
             SELECT COUNT(DISTINCT aa.authority_url) FROM account_authorities aa
             JOIN key_books kb ON aa.authority_url = kb.url
-            WHERE aa.account_url NOT LIKE kb.adi_url || '/%'
-              AND aa.account_url != kb.adi_url
+            WHERE aa.adi_url IS NOT NULL AND aa.adi_url != kb.adi_url
         """).fetchone()[0]
         delegation_count = conn.execute(
             "SELECT COUNT(*) FROM key_entries WHERE delegate IS NOT NULL AND delegate != ''"
@@ -130,7 +138,8 @@ def get_network_summary():
         # --- Key activity timeline (from last_used_on) ---
         key_activity = []
         for r in conn.execute("""
-            SELECT date(last_used_on / 1000000000, 'unixepoch') as day,
+            -- last_used_on is microseconds since the Unix epoch.
+            SELECT date(last_used_on / 1000000, 'unixepoch') as day,
                    COUNT(*) as uses
             FROM key_entries
             WHERE last_used_on IS NOT NULL AND last_used_on > 0
@@ -157,29 +166,40 @@ def get_network_summary():
 
 
 @router.get("/topology")
-def get_topology(active_only: bool = Query(False, description="Exclude empty/reserved ADIs with no accounts")):
+@cached()
+def get_topology(active_only: bool = Query(True, description="Exclude empty/reserved ADIs with no accounts")):
     """Get network topology for visualization.
 
-    Returns nodes (ADIs) and edges (parent-child + cross-ADI authority).
-    Use active_only=true to exclude empty ADIs for faster loading.
+    Returns nodes (ADIs) and edges (parent-child, cross-ADI authority, key
+    sharing, delegation). Defaults to active ADIs only — the full 43k-node graph
+    is not renderable in a browser force layout, so the unfiltered view must be
+    requested explicitly (active_only=false). Node account/book counts use
+    grouped joins instead of per-row correlated subqueries, and every returned
+    edge is guaranteed to reference two returned nodes.
     """
     with get_db() as conn:
-        # Build query — optionally filter to active ADIs only
-        where_clause = ""
+        active_filter = ""
         if active_only:
-            where_clause = "HAVING token_count > 0 OR data_count > 0 OR book_count > 0 OR (a.entry_count IS NOT NULL AND a.entry_count > 0)"
+            active_filter = (
+                "WHERE (tc.c IS NOT NULL OR dc.c IS NOT NULL OR bc.c IS NOT NULL "
+                "OR (a.entry_count IS NOT NULL AND a.entry_count > 0))"
+            )
 
         nodes = []
+        node_ids = set()
         for r in conn.execute(f"""
             SELECT a.url, a.parent_url, a.entry_count, a.crawl_status,
-                (SELECT COUNT(*) FROM token_accounts t WHERE t.adi_url = a.url) as token_count,
-                (SELECT COUNT(*) FROM data_accounts d WHERE d.adi_url = a.url) as data_count,
-                (SELECT COUNT(*) FROM key_books kb WHERE kb.adi_url = a.url) as book_count
+                   COALESCE(tc.c, 0) AS token_count,
+                   COALESCE(dc.c, 0) AS data_count,
+                   COALESCE(bc.c, 0) AS book_count
             FROM adis a
-            GROUP BY a.url
-            {where_clause}
+            LEFT JOIN (SELECT adi_url, COUNT(*) c FROM token_accounts GROUP BY adi_url) tc ON tc.adi_url = a.url
+            LEFT JOIN (SELECT adi_url, COUNT(*) c FROM data_accounts  GROUP BY adi_url) dc ON dc.adi_url = a.url
+            LEFT JOIN (SELECT adi_url, COUNT(*) c FROM key_books       GROUP BY adi_url) bc ON bc.adi_url = a.url
+            {active_filter}
             ORDER BY a.url
         """):
+            node_ids.add(r["url"])
             nodes.append({
                 "id": r["url"],
                 "parent_url": r["parent_url"],
@@ -191,32 +211,25 @@ def get_topology(active_only: bool = Query(False, description="Exclude empty/res
                 "account_total": r["token_count"] + r["data_count"],
             })
 
+        def both_present(s, t):
+            return s in node_ids and t in node_ids
+
         # Parent-child edges
-        hierarchy_edges = []
-        for n in nodes:
-            if n["parent_url"]:
-                hierarchy_edges.append({
-                    "source": n["parent_url"],
-                    "target": n["id"],
-                    "type": "hierarchy",
-                })
+        hierarchy_edges = [
+            {"source": n["parent_url"], "target": n["id"], "type": "hierarchy"}
+            for n in nodes
+            if n["parent_url"] and n["parent_url"] in node_ids
+        ]
 
         # Cross-ADI authority edges (book in ADI A governs account in ADI B)
         authority_edges = []
         for r in conn.execute("""
-            SELECT DISTINCT kb.adi_url as source_adi,
-                   CASE
-                       WHEN ta.adi_url IS NOT NULL THEN ta.adi_url
-                       WHEN da.adi_url IS NOT NULL THEN da.adi_url
-                       ELSE NULL
-                   END as target_adi
+            SELECT DISTINCT kb.adi_url AS source_adi, aa.adi_url AS target_adi
             FROM account_authorities aa
             JOIN key_books kb ON aa.authority_url = kb.url
-            LEFT JOIN token_accounts ta ON aa.account_url = ta.url
-            LEFT JOIN data_accounts da ON aa.account_url = da.url
-            WHERE target_adi IS NOT NULL AND target_adi != kb.adi_url
+            WHERE aa.adi_url IS NOT NULL AND aa.adi_url != kb.adi_url
         """):
-            if r["source_adi"] and r["target_adi"]:
+            if r["source_adi"] and r["target_adi"] and both_present(r["source_adi"], r["target_adi"]):
                 authority_edges.append({
                     "source": r["source_adi"],
                     "target": r["target_adi"],
@@ -235,11 +248,12 @@ def get_topology(active_only: bool = Query(False, description="Exclude empty/res
             WHERE ke1.public_key_hash IS NOT NULL AND ke1.public_key_hash != ''
               AND a1.adi_url != a2.adi_url
         """):
-            key_edges.append({
-                "source": r["source_adi"],
-                "target": r["target_adi"],
-                "type": "key_sharing",
-            })
+            if both_present(r["source_adi"], r["target_adi"]):
+                key_edges.append({
+                    "source": r["source_adi"],
+                    "target": r["target_adi"],
+                    "type": "key_sharing",
+                })
 
         # Delegation edges
         delegation_edges = []
@@ -252,13 +266,38 @@ def get_topology(active_only: bool = Query(False, description="Exclude empty/res
             WHERE ke.delegate IS NOT NULL AND ke.delegate != ''
               AND kp.adi_url != kb.adi_url
         """):
-            delegation_edges.append({
-                "source": r["source_adi"],
-                "target": r["target_adi"],
-                "type": "delegation",
-            })
+            if both_present(r["source_adi"], r["target_adi"]):
+                delegation_edges.append({
+                    "source": r["source_adi"],
+                    "target": r["target_adi"],
+                    "type": "delegation",
+                })
 
+        total_adis = conn.execute("SELECT COUNT(*) FROM adis").fetchone()[0]
+
+    # Per-node key-reuse degree: how many distinct other ADIs each node shares a
+    # signing key with. Powers an honest "Key Reuse Risk" color mode (previously
+    # the UI colored by key-book count, which is unrelated to reuse).
+    shared_partners: dict[str, set] = {}
+    for e in key_edges:
+        shared_partners.setdefault(e["source"], set()).add(e["target"])
+        shared_partners.setdefault(e["target"], set()).add(e["source"])
+    for n in nodes:
+        n["shared_key_count"] = len(shared_partners.get(n["id"], ()))
+
+    edges = hierarchy_edges + authority_edges + key_edges + delegation_edges
     return {
         "nodes": nodes,
-        "edges": hierarchy_edges + authority_edges + key_edges + delegation_edges,
+        "edges": edges,
+        "meta": {
+            "active_only": active_only,
+            "total_adis": total_adis,
+            "returned_nodes": len(nodes),
+            "edge_counts": {
+                "hierarchy": len(hierarchy_edges),
+                "authority": len(authority_edges),
+                "key_sharing": len(key_edges),
+                "delegation": len(delegation_edges),
+            },
+        },
     }

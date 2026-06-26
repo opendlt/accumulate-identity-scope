@@ -1,18 +1,34 @@
 """Dashboard statistics endpoints."""
 
+import os
+from datetime import datetime, timezone
 from fastapi import APIRouter
-from ..database import get_db
+from ..database import get_db, DB_PATH
+from ..cache import cached
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
+def _data_as_of() -> str | None:
+    """ISO-8601 UTC timestamp of the crawl snapshot, from the DB file mtime."""
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(DB_PATH), tz=timezone.utc).isoformat()
+    except OSError:
+        return None
+
+
 @router.get("")
+@cached()
 def get_stats():
     with get_db() as conn:
         counts = {}
         for table in ("adis", "token_accounts", "data_accounts", "token_issuers",
-                       "key_books", "key_pages", "key_entries", "account_authorities"):
-            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                       "key_books", "key_pages", "key_entries", "account_authorities",
+                       "lite_accounts"):
+            try:
+                counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            except Exception:
+                counts[table] = 0
 
         adi_status = {}
         for r in conn.execute("SELECT crawl_status, COUNT(*) as c FROM adis GROUP BY crawl_status"):
@@ -68,4 +84,8 @@ def get_stats():
         "threshold_distribution": threshold_distribution,
         "top_adis": top_adis,
         "depth_distribution": depth_distribution,
+        "meta": {
+            "data_as_of": _data_as_of(),
+            "network": "Accumulate Mainnet",
+        },
     }

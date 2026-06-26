@@ -1,8 +1,9 @@
 """ADI endpoints."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 from ..database import get_db, rows_to_list, row_to_dict
+from ..cache import cached
 
 router = APIRouter(prefix="/api/adis", tags=["adis"])
 
@@ -41,6 +42,7 @@ def list_adis(
 
 
 @router.get("/tree")
+@cached()
 def get_full_tree(root_url: Optional[str] = None, max_depth: int = Query(10, ge=1, le=20)):
     """Get the full ADI tree or a subtree as nested structure."""
     with get_db() as conn:
@@ -72,18 +74,21 @@ def get_full_tree(root_url: Optional[str] = None, max_depth: int = Query(10, ge=
         # Build nested tree
         flat = rows_to_list(rows)
 
-        # Add child counts per node
+        # Add account/book counts per node. Three grouped scans (each keyed by
+        # the indexed adi_url column) replace the previous 3-correlated-subquery
+        # lookup per node, which was an N+1 over the whole tree.
+        token_counts = {r["adi_url"]: r["c"] for r in conn.execute(
+            "SELECT adi_url, COUNT(*) c FROM token_accounts GROUP BY adi_url")}
+        data_counts = {r["adi_url"]: r["c"] for r in conn.execute(
+            "SELECT adi_url, COUNT(*) c FROM data_accounts GROUP BY adi_url")}
+        book_counts = {r["adi_url"]: r["c"] for r in conn.execute(
+            "SELECT adi_url, COUNT(*) c FROM key_books GROUP BY adi_url")}
+
         for node in flat:
             url = node["url"]
-            counts = conn.execute("""
-                SELECT
-                    (SELECT COUNT(*) FROM token_accounts WHERE adi_url = ?) as tokens,
-                    (SELECT COUNT(*) FROM data_accounts WHERE adi_url = ?) as data_accts,
-                    (SELECT COUNT(*) FROM key_books WHERE adi_url = ?) as books
-            """, (url, url, url)).fetchone()
-            node["token_count"] = counts["tokens"]
-            node["data_count"] = counts["data_accts"]
-            node["book_count"] = counts["books"]
+            node["token_count"] = token_counts.get(url, 0)
+            node["data_count"] = data_counts.get(url, 0)
+            node["book_count"] = book_counts.get(url, 0)
 
     return _build_tree(flat)
 
@@ -110,7 +115,7 @@ def get_adi(url: str):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM adis WHERE url = ?", (url,)).fetchone()
         if not row:
-            return {"error": "ADI not found", "url": url}
+            raise HTTPException(status_code=404, detail=f"ADI not found: {url}")
 
         adi = row_to_dict(row)
 
