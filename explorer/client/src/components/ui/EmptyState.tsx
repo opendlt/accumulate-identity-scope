@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
+import { Reticle } from './Reticle';
 
 interface EmptyStateProps {
+  /** Optional override glyph; when omitted the scope reticle is shown. */
   icon?: string;
   title: string;
   description?: string;
@@ -8,7 +10,7 @@ interface EmptyStateProps {
   compact?: boolean;
 }
 
-export function EmptyState({ icon = '\u25CB', title, description, action, compact }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, compact }: EmptyStateProps) {
   return (
     <motion.div
       className={`empty-state ${compact ? 'empty-state--compact' : ''}`}
@@ -16,7 +18,9 @@ export function EmptyState({ icon = '\u25CB', title, description, action, compac
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.4 }}
     >
-      <div className="empty-state-icon">{icon}</div>
+      <div className="empty-state-icon">
+        {icon ? icon : <Reticle size={compact ? 40 : 52} color="var(--text-tertiary)" />}
+      </div>
       <div className="empty-state-title">{title}</div>
       {description && <div className="empty-state-desc">{description}</div>}
       {action && (

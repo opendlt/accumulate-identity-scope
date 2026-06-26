@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Reticle } from './Reticle';
 
 interface ErrorStateProps {
   title?: string;
@@ -7,7 +8,7 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({
-  title = 'Something went wrong',
+  title = 'Signal lost',
   message = 'Failed to load data. Please try again.',
   onRetry,
 }: ErrorStateProps) {
@@ -18,7 +19,11 @@ export function ErrorState({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
     >
-      <div className="error-state-icon">{'\u26A0'}</div>
+      <div className="error-state-icon">
+        <Reticle size={52} color="var(--color-danger)" strong>
+          <span style={{ fontSize: 18, lineHeight: 1, color: 'var(--color-danger)' }}>{'⚠'}</span>
+        </Reticle>
+      </div>
       <div className="error-state-title">{title}</div>
       <div className="error-state-message">{message}</div>
       {onRetry && (

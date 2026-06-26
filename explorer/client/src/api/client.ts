@@ -1,8 +1,25 @@
 const BASE = '/api';
 
+/** Error thrown by the API client, carrying the HTTP status (e.g. 404). */
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    let detail = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && typeof body.detail === 'string') detail = body.detail;
+    } catch { /* non-JSON error body */ }
+    throw new ApiError(res.status, detail);
+  }
   return res.json();
 }
 
@@ -17,7 +34,8 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 import type {
   Stats, ADI, TreeNode, TokenAccount, DataAccount, TokenIssuer,
   KeyBook, KeyPage, PaginatedResponse, SearchResults, GraphData, AuthorityRecord,
-  Intelligence, NetworkSummary, TopologyData, AuthorityFlows
+  Intelligence, NetworkSummary, TopologyData, AuthorityFlows, KeyActivityTimeline, AdiReport,
+  LiteAccount, LiteSummary, LiteDetail, LiteIntelligence, LiteCrossSurface
 } from '../types';
 
 export const api = {
@@ -31,11 +49,25 @@ export const api = {
   getTree: (rootUrl?: string, maxDepth = 10) =>
     fetchJson<TreeNode[]>(`${BASE}/adis/tree${qs({ root_url: rootUrl, max_depth: maxDepth })}`),
 
-  listTokenAccounts: (params: { adi_url?: string; token_url?: string; search?: string; page?: number; per_page?: number } = {}) =>
+  listTokenAccounts: (params: { adi_url?: string; token_url?: string; search?: string; page?: number; per_page?: number; sort?: string; dir?: 'asc' | 'desc' } = {}) =>
     fetchJson<PaginatedResponse<TokenAccount>>(`${BASE}/token-accounts${qs(params)}`),
 
-  listDataAccounts: (params: { adi_url?: string; search?: string; page?: number; per_page?: number } = {}) =>
+  listDataAccounts: (params: { adi_url?: string; search?: string; page?: number; per_page?: number; sort?: string; dir?: 'asc' | 'desc' } = {}) =>
     fetchJson<PaginatedResponse<DataAccount>>(`${BASE}/data-accounts${qs(params)}`),
+
+  listLiteAccounts: (params: { account_type?: string; token_url?: string; search?: string; page?: number; per_page?: number; sort?: string; dir?: 'asc' | 'desc' } = {}) =>
+    fetchJson<PaginatedResponse<LiteAccount>>(`${BASE}/lite-accounts${qs(params)}`),
+
+  getLiteSummary: () => fetchJson<LiteSummary>(`${BASE}/lite-accounts/summary`),
+
+  getLiteDetail: (url: string) =>
+    fetchJson<LiteDetail>(`${BASE}/lite-accounts/detail${qs({ url })}`),
+
+  getLiteIntelligence: () =>
+    fetchJson<LiteIntelligence>(`${BASE}/lite-accounts/intelligence`),
+
+  getLiteCrossSurface: () =>
+    fetchJson<LiteCrossSurface>(`${BASE}/lite-accounts/cross-surface`),
 
   listTokenIssuers: () => fetchJson<TokenIssuer[]>(`${BASE}/token-issuers`),
 
@@ -58,6 +90,10 @@ export const api = {
   search: (q: string) => fetchJson<SearchResults>(`${BASE}/search${qs({ q })}`),
 
   getIntelligence: () => fetchJson<Intelligence>(`${BASE}/intelligence`),
+
+  getKeyTimeline: () => fetchJson<KeyActivityTimeline>(`${BASE}/key-activity-timeline`),
+
+  getAdiReport: (url: string) => fetchJson<AdiReport>(`${BASE}/intelligence/adi-report${qs({ url })}`),
 
   getNetworkSummary: () => fetchJson<NetworkSummary>(`${BASE}/network/summary`),
   getTopology: (activeOnly = true) => fetchJson<TopologyData>(`${BASE}/network/topology${activeOnly ? '?active_only=true' : ''}`),

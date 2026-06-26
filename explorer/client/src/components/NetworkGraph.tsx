@@ -5,8 +5,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api/client';
 import { GlowBadge } from './ui/GlowBadge';
 import { AnimatedCounter } from './ui/AnimatedCounter';
+import { InfoTip } from './ui/InfoTip';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeColors } from '../hooks/useThemeColors';
+import { getEntityColor } from '../hooks/useEntityColor';
+import {
+  getEdgeColors,
+  getEdgeLegendColor,
+  shortLabel,
+  COLOR_BY_OPTIONS,
+  EDGE_LEGEND_ITEMS,
+  NODE_SHAPE_LEGEND_ITEMS,
+  STATUS_MARKER_LEGEND_ITEMS,
+  drawStatusMarker,
+  defaultEdgeFilters,
+  nodeHasContent,
+  isEdgeVisible,
+  accountCountColor,
+  riskColor,
+  colorLegendItems,
+  colorLegendItemColor,
+} from './graph/graphShared';
 import type { TopologyNode, TopologyEdge, TopologyData } from '../types';
 import TopologyWorker from '../workers/topologyWorker?worker';
 
@@ -14,29 +33,6 @@ import TopologyWorker from '../workers/topologyWorker?worker';
 
 const STATUS_COLORS_DARK: Record<string, string> = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#4a5078' };
 const STATUS_COLORS_LIGHT: Record<string, string> = { done: '#22c55e', error: '#ef4444', pending: '#f59e0b', default: '#8b92ab' };
-
-// Continuous gradient: blue → cyan → yellow → orange → red
-function heatColor(t: number): string {
-  // Use log scale to spread out the low end (most nodes have few accounts)
-  const s = Math.min(1, Math.max(0, t));
-  const r = Math.round(s < 0.5 ? s * 2 * 200 + 50 : 239 + (s - 0.5) * 2 * 16);
-  const g = Math.round(s < 0.35 ? 140 + s * 300 : s < 0.65 ? 211 - (s - 0.35) * 400 : 68 - (s - 0.65) * 100);
-  const b = Math.round(s < 0.3 ? 255 - s * 500 : s < 0.6 ? 100 - (s - 0.3) * 200 : 68 - (s - 0.6) * 100);
-  return `rgb(${Math.max(0, Math.min(255, r))},${Math.max(0, Math.min(255, g))},${Math.max(0, Math.min(255, b))})`;
-}
-
-const EDGE_COLORS: Record<string, string> = {
-  hierarchy: 'rgba(108,140,255,0.12)',
-  authority: 'rgba(245,158,11,0.18)',
-  key_sharing: 'rgba(239,68,68,0.16)',
-  delegation: 'rgba(52,211,153,0.20)',
-};
-
-/* ── Helpers ────────────────────────────────────── */
-
-function shortLabel(url: string) {
-  return url.replace('acc://', '').replace('.acme', '');
-}
 
 /* ── Layout ──────────────────────────────────────── */
 
@@ -73,8 +69,37 @@ function layoutNodes(nodes: TopologyNode[]): PositionedNode[] {
 
 /* ── Component ──────────────────────────────────── */
 
+/* ── Spatial Index ───────────────────────────────── */
+
+interface SpatialGrid {
+  cellSize: number;
+  buckets: Map<string, PositionedNode[]>;
+}
+
+function gridKey(cx: number, cy: number): string {
+  return cx + ',' + cy;
+}
+
+function buildSpatialGrid(nodes: PositionedNode[]): SpatialGrid {
+  // Cell size in world units. Node world spacing (`spacing` in layout) is 2.8,
+  // so a cell of ~40 world units comfortably covers typical hit radii while
+  // keeping buckets small.
+  const cellSize = 40;
+  const buckets = new Map<string, PositionedNode[]>();
+  for (const n of nodes) {
+    const cx = Math.floor(n.px / cellSize);
+    const cy = Math.floor(n.py / cellSize);
+    const key = gridKey(cx, cy);
+    let bucket = buckets.get(key);
+    if (!bucket) { bucket = []; buckets.set(key, bucket); }
+    bucket.push(n);
+  }
+  return { cellSize, buckets };
+}
+
 export function NetworkGraph() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -84,6 +109,9 @@ export function NetworkGraph() {
   // State
   const [dims, setDims] = useState({ width: 800, height: 600 });
   const [hovered, setHovered] = useState<PositionedNode | null>(null);
+  // Container-relative cursor position used to anchor the hover tooltip near the
+  // pointer (P3.5). Updated from the same rAF-coalesced pointer-move path.
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const [selected, setSelected] = useState<PositionedNode | null>(null);
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -92,15 +120,17 @@ export function NetworkGraph() {
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
   const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
 
+  // rAF coalescing for pointer move (one hover/pan update per frame max)
+  const rafRef = useRef<number | null>(null);
+  const pendingMoveRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // Mirror of `hovered.id` so the rAF flush can guard without re-subscribing.
+  const hoveredIdRef = useRef<string | null>(null);
+
   // Controls
   const [colorBy, setColorBy] = useState('accounts');
   const [hideEmpty, setHideEmpty] = useState(true);
-  const [edgeFilters, setEdgeFilters] = useState({
-    hierarchy: false,
-    authority: false,
-    key_sharing: false,
-    delegation: false,
-  });
+  // Default edges ON for hierarchy (P2.4) so structure is visible on first load.
+  const [edgeFilters, setEdgeFilters] = useState(defaultEdgeFilters);
 
   // Data — lazy loaded via Web Worker, user clicks to start
   const [loadRequested, setLoadRequested] = useState(false);
@@ -165,17 +195,11 @@ export function NetworkGraph() {
     };
   }, [topology, loadRequested]);
 
-  // Compute max account total for heat scale
-  const maxAccounts = useMemo(() => {
-    if (!topology) return 1;
-    return Math.max(1, ...topology.nodes.map(n => n.account_total));
-  }, [topology]);
-
   // Filter + layout positions (pre-computed, no simulation)
   const positionedNodes = useMemo(() => {
     if (!topology) return [];
     const nodes = hideEmpty
-      ? topology.nodes.filter(n => n.account_total > 0 || n.token_count > 0 || n.data_count > 0 || n.book_count > 0 || n.entry_count > 0)
+      ? topology.nodes.filter(nodeHasContent)
       : topology.nodes;
     return layoutNodes(nodes);
   }, [topology, hideEmpty]);
@@ -186,6 +210,9 @@ export function NetworkGraph() {
     for (const n of positionedNodes) m.set(n.id, n);
     return m;
   }, [positionedNodes]);
+
+  // Uniform spatial grid for O(1)-ish hit testing (replaces O(N) linear scan)
+  const spatialGrid = useMemo(() => buildSpatialGrid(positionedNodes), [positionedNodes]);
 
   // Edge source/target lookup
   const edgesByNode = useMemo(() => {
@@ -203,11 +230,7 @@ export function NetworkGraph() {
   // Visible edges — only between visible nodes
   const filteredEdges = useMemo(() => {
     if (!topology) return [];
-    return topology.edges.filter(e =>
-      edgeFilters[e.type as keyof typeof edgeFilters] &&
-      nodeById.has(e.source) &&
-      nodeById.has(e.target)
-    );
+    return topology.edges.filter(e => isEdgeVisible(e, edgeFilters, nodeById));
   }, [topology, edgeFilters, nodeById]);
 
   // Search matches
@@ -224,15 +247,19 @@ export function NetworkGraph() {
       return sc[node.crawl_status] || sc.default;
     }
     if (colorBy === 'accounts') {
-      // Log scale so low-value nodes get color variation too
-      const logVal = Math.log2((node.account_total || 0) + 1);
-      const logMax = Math.log2(maxAccounts + 1);
-      return heatColor(logVal / logMax);
+      // Shared account-count buckets so the minimap (TopologyMap) and this graph
+      // read identically (P-C6). 0 → muted, 1–4 / 5–19 / 20–49 / 50+ buckets.
+      return accountCountColor(node.account_total, themeColors.canvasTextMuted);
     }
     if (colorBy === 'depth') return node.parent_url ? '#a78bfa' : '#6c8cff';
-    if (colorBy === 'risk') return node.book_count > 2 ? '#ef4444' : node.book_count > 1 ? '#f59e0b' : '#22c55e';
+    if (colorBy === 'risk') {
+      // Real key-reuse signal (P-C3): color by shared_key_count (distinct other
+      // ADIs this node shares a signing key with), NOT book_count. Bands:
+      // 0 → safe, 1–4 → moderate, ≥5 → high.
+      return riskColor(node.shared_key_count);
+    }
     return '#6c8cff';
-  }, [colorBy, maxAccounts, isDark]);
+  }, [colorBy, isDark, themeColors]);
 
   // Handle select from URL
   useEffect(() => {
@@ -247,19 +274,34 @@ export function NetworkGraph() {
     }
   }, [searchParams, positionedNodes, nodeById, dims]);
 
-  // ── Canvas Rendering ──
+  // ── Canvas Sizing ──
+  // Allocate/resize the backing stores ONLY when dims or dpr change.
+  // Doing this in the draw path would clear+reallocate every frame.
+  const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+  useEffect(() => {
+    for (const c of [canvasRef.current, overlayRef.current]) {
+      if (!c) continue;
+      c.width = dims.width * dpr;
+      c.height = dims.height * dpr;
+    }
+  }, [dims, dpr]);
+
+  // ── Base Layer Rendering (nodes + edges + labels + stats) ──
+  // The expensive O(N+E) pass. Redraw only when content-affecting inputs change.
+  // NOT keyed on hover — hover is drawn on the overlay canvas.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || positionedNodes.length === 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = dims.width * dpr;
-    canvas.height = dims.height * dpr;
-    ctx.scale(dpr, dpr);
+    // Reset transform + clear (no width/height reassignment — backing store
+    // is sized by the sizing effect above).
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.clearRect(0, 0, dims.width, dims.height);
 
-    // Clear
+    // Background
     ctx.fillStyle = themeColors.canvasBg;
     ctx.fillRect(0, 0, dims.width, dims.height);
 
@@ -276,6 +318,7 @@ export function NetworkGraph() {
     const vpPad = 20 * invZoom;
 
     // Draw edges (only if enabled — these are the expensive part)
+    const edgeColors = getEdgeColors();
     if (filteredEdges.length > 0 && filteredEdges.length < 50000) {
       for (const e of filteredEdges) {
         const src = nodeById.get(e.source);
@@ -290,7 +333,7 @@ export function NetworkGraph() {
         ctx.beginPath();
         ctx.moveTo(src.px, src.py);
         ctx.lineTo(tgt.px, tgt.py);
-        ctx.strokeStyle = EDGE_COLORS[e.type] || 'rgba(108,140,255,0.08)';
+        ctx.strokeStyle = edgeColors[e.type] || 'rgba(108,140,255,0.08)';
         ctx.lineWidth = 0.5 * invZoom;
         ctx.stroke();
       }
@@ -304,14 +347,13 @@ export function NetworkGraph() {
     // Collect visible nodes for label pass
     const labelNodes: Array<{ n: PositionedNode; r: number }> = [];
 
-    // Pass 1: Draw all node dots
+    // Pass 1: Draw all node dots. Search highlight rings are part of the static
+    // base layer; hover/selection emphasis is drawn on the overlay canvas.
     for (const n of positionedNodes) {
       if (n.px < vpLeft - vpPad || n.px > vpRight + vpPad || n.py < vpTop - vpPad || n.py > vpBottom + vpPad) continue;
 
       const color = getNodeColor(n);
       const isSearch = searchMatches?.has(n.id);
-      const isHov = hovered?.id === n.id;
-      const isSel = selected?.id === n.id;
 
       // Dim non-matching nodes during search
       if (searchMatches && !isSearch) {
@@ -320,20 +362,6 @@ export function NetworkGraph() {
 
       const r = Math.max(nodeRadius, Math.log2((n.account_total || 1) + 1) * nodeRadius * 0.6);
 
-      // Hover/select highlight
-      if (isSel) {
-        ctx.beginPath();
-        ctx.arc(n.px, n.py, r + 4 * invZoom, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#6c8cff';
-        ctx.lineWidth = 1.5 * invZoom;
-        ctx.stroke();
-      }
-      if (isHov) {
-        ctx.beginPath();
-        ctx.arc(n.px, n.py, r + 3 * invZoom, 0, 2 * Math.PI);
-        ctx.fillStyle = color + '44';
-        ctx.fill();
-      }
       if (isSearch) {
         ctx.beginPath();
         ctx.arc(n.px, n.py, r + 5 * invZoom, 0, 2 * Math.PI);
@@ -356,10 +384,15 @@ export function NetworkGraph() {
       ctx.fillStyle = color;
       ctx.fill();
 
+      // Redundant color-blind-safe status cue (P3.4): error nodes get a ring
+      // outline on top of the fill, so done/error read without relying on hue.
+      drawStatusMarker(ctx, n.px, n.py, r, n.crawl_status, themeColors.canvasText, invZoom);
+
       ctx.globalAlpha = 1;
 
-      // Collect for label pass
-      if (showLabels || isHov || isSel) {
+      // Collect for label pass (labels for the always-visible-at-zoom case;
+      // hover/selected labels are added by the overlay layer).
+      if (showLabels) {
         labelNodes.push({ n, r });
       }
     }
@@ -403,9 +436,101 @@ export function NetworkGraph() {
     ctx.textAlign = 'left';
     ctx.fillText(`${positionedNodes.length.toLocaleString()} nodes  |  Zoom: ${camera.zoom.toFixed(1)}x`, 12, dims.height - 12);
 
-  }, [positionedNodes, filteredEdges, camera, dims, isDark, themeColors, getNodeColor, hovered, selected, searchMatches, nodeById]);
+  }, [positionedNodes, filteredEdges, camera, dims, dpr, isDark, themeColors, getNodeColor, searchMatches, nodeById]);
+
+  // ── Overlay Layer Rendering (hover ring + selected emphasis + hover label) ──
+  // Cheap: a handful of shapes for at most two nodes. Redraws on hover/selection
+  // (and whenever the camera/dims/theme change so the overlay stays aligned).
+  useEffect(() => {
+    const canvas = overlayRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.clearRect(0, 0, dims.width, dims.height);
+
+    if (!hovered && !selected) return;
+
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.zoom, camera.zoom);
+
+    const invZoom = 1 / camera.zoom;
+    const nodeRadius = Math.max(1.5, 3 * invZoom);
+    const radiusOf = (n: PositionedNode) =>
+      Math.max(nodeRadius, Math.log2((n.account_total || 1) + 1) * nodeRadius * 0.6);
+
+    // Selected emphasis ring
+    if (selected) {
+      const n = nodeById.get(selected.id) || selected;
+      const r = radiusOf(n);
+      ctx.beginPath();
+      ctx.arc(n.px, n.py, r + 4 * invZoom, 0, 2 * Math.PI);
+      ctx.strokeStyle = '#6c8cff';
+      ctx.lineWidth = 1.5 * invZoom;
+      ctx.stroke();
+    }
+
+    // Hover highlight ring. In the original single-pass draw this was a filled
+    // `color+'44'` circle (radius r+3) painted BEHIND the opaque node dot, so
+    // only the annular ring beyond the dot was visible. Since the overlay sits
+    // on TOP of the base dot, draw it as a donut (even-odd fill punching out the
+    // inner dot radius) to reproduce the exact same visible ring.
+    if (hovered) {
+      const n = nodeById.get(hovered.id) || hovered;
+      const r = radiusOf(n);
+      const color = getNodeColor(n);
+      ctx.beginPath();
+      ctx.arc(n.px, n.py, r + 3 * invZoom, 0, 2 * Math.PI);
+      ctx.arc(n.px, n.py, r, 0, 2 * Math.PI);
+      ctx.fillStyle = color + '44';
+      ctx.fill('evenodd');
+    }
+
+    // Labels for hovered/selected nodes (matches prior behavior where hover/
+    // selected nodes always got a label pill regardless of zoom).
+    const labelTargets: PositionedNode[] = [];
+    if (selected) labelTargets.push(nodeById.get(selected.id) || selected);
+    if (hovered && hovered.id !== selected?.id) labelTargets.push(nodeById.get(hovered.id) || hovered);
+
+    if (labelTargets.length > 0) {
+      const fontSize = Math.max(3, 10 * invZoom);
+      const labelBg = isDark ? 'rgba(6,8,15,0.75)' : 'rgba(255,255,255,0.8)';
+      ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      for (const n of labelTargets) {
+        const r = radiusOf(n);
+        const label = shortLabel(n.id);
+        const labelY = n.py + r + 4 * invZoom;
+        const metrics = ctx.measureText(label);
+        const padX = 3 * invZoom;
+        const padY = 1.5 * invZoom;
+
+        ctx.fillStyle = labelBg;
+        ctx.beginPath();
+        const bx = n.px - metrics.width / 2 - padX;
+        const by = labelY - padY;
+        const bw = metrics.width + padX * 2;
+        const bh = fontSize + padY * 2;
+        const br = 2 * invZoom;
+        ctx.roundRect(bx, by, bw, bh, br);
+        ctx.fill();
+
+        ctx.fillStyle = themeColors.canvasText;
+        ctx.fillText(label, n.px, labelY);
+      }
+    }
+
+    ctx.restore();
+  }, [hovered, selected, camera, dims, dpr, isDark, themeColors, getNodeColor, nodeById]);
 
   // ── Hit testing ──
+  // Queries only the spatial-grid buckets overlapping the cursor's hit radius
+  // instead of scanning every node. Same node picked as the old linear scan.
   const hitTest = useCallback((clientX: number, clientY: number): PositionedNode | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -417,31 +542,85 @@ export function NetworkGraph() {
     const wy = (my - camera.y) / camera.zoom;
     const hitR = Math.max(6, 12 / camera.zoom);
 
+    const { cellSize, buckets } = spatialGrid;
+    // Cells spanned by the hit radius around the cursor.
+    const minCx = Math.floor((wx - hitR) / cellSize);
+    const maxCx = Math.floor((wx + hitR) / cellSize);
+    const minCy = Math.floor((wy - hitR) / cellSize);
+    const maxCy = Math.floor((wy + hitR) / cellSize);
+
     let closest: PositionedNode | null = null;
     let closestDist = hitR * hitR;
-    for (const n of positionedNodes) {
-      const dx = n.px - wx;
-      const dy = n.py - wy;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < closestDist) {
-        closestDist = d2;
-        closest = n;
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cy = minCy; cy <= maxCy; cy++) {
+        const bucket = buckets.get(gridKey(cx, cy));
+        if (!bucket) continue;
+        for (const n of bucket) {
+          const dx = n.px - wx;
+          const dy = n.py - wy;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < closestDist) {
+            closestDist = d2;
+            closest = n;
+          }
+        }
       }
     }
     return closest;
-  }, [camera, positionedNodes]);
+  }, [camera, spatialGrid]);
+
+  // Keep hovered-id mirror in sync for the rAF guard.
+  useEffect(() => { hoveredIdRef.current = hovered?.id ?? null; }, [hovered]);
 
   // ── Mouse Handlers ──
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  // Pointer move is rAF-coalesced: store the latest event and flush at most once
+  // per frame. The flush either pans the camera (during drag) or hit-tests for
+  // hover, skipping setHovered when the hovered node id is unchanged.
+  const flushMove = useCallback(() => {
+    rafRef.current = null;
+    const ev = pendingMoveRef.current;
+    pendingMoveRef.current = null;
+    if (!ev) return;
+
     const drag = dragRef.current;
     if (drag) {
-      const dx = e.clientX - drag.startX;
-      const dy = e.clientY - drag.startY;
+      const dx = ev.clientX - drag.startX;
+      const dy = ev.clientY - drag.startY;
       setCamera(c => ({ ...c, x: drag.camX + dx, y: drag.camY + dy }));
       return;
     }
-    setHovered(hitTest(e.clientX, e.clientY));
+
+    const next = hitTest(ev.clientX, ev.clientY);
+    // Track container-relative cursor position so the tooltip can follow the
+    // pointer (P3.5). Update whenever there is a hover target.
+    if (next) {
+      const el = containerRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        setCursorPos({ x: ev.clientX - rect.left, y: ev.clientY - rect.top });
+      }
+    }
+    if ((next?.id ?? null) === hoveredIdRef.current) return; // no change, skip
+    setHovered(next);
   }, [hitTest]);
+
+  const scheduleMove = useCallback(() => {
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(flushMove);
+  }, [flushMove]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    pendingMoveRef.current = { clientX: e.clientX, clientY: e.clientY };
+    scheduleMove();
+  }, [scheduleMove]);
+
+  // Cancel any pending rAF on unmount.
+  useEffect(() => () => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 0) {
@@ -516,6 +695,57 @@ export function NetworkGraph() {
     }
   }, [positionedNodes, handleZoomToFit]);
 
+  // ── A11y: keyboard controls on the focused canvas region (P2.7) ──
+  // Arrow keys pan the camera, +/-/= zoom around the viewport center, Escape
+  // clears selection / closes the flyout. Drives the same camera state used by
+  // mouse drag/wheel so behavior stays consistent.
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const panStep = 60;
+    const zoomFactor = 1.15;
+    const zoomAt = (factor: number) => {
+      const cx = dims.width / 2;
+      const cy = dims.height / 2;
+      setCamera(c => {
+        const newZoom = Math.max(0.1, Math.min(50, c.zoom * factor));
+        const ratio = newZoom / c.zoom;
+        return { zoom: newZoom, x: cx - (cx - c.x) * ratio, y: cy - (cy - c.y) * ratio };
+      });
+    };
+    switch (e.key) {
+      case 'ArrowUp':    e.preventDefault(); setCamera(c => ({ ...c, y: c.y + panStep })); break;
+      case 'ArrowDown':  e.preventDefault(); setCamera(c => ({ ...c, y: c.y - panStep })); break;
+      case 'ArrowLeft':  e.preventDefault(); setCamera(c => ({ ...c, x: c.x + panStep })); break;
+      case 'ArrowRight': e.preventDefault(); setCamera(c => ({ ...c, x: c.x - panStep })); break;
+      case '+':
+      case '=':          e.preventDefault(); zoomAt(zoomFactor); break;
+      case '-':
+      case '_':          e.preventDefault(); zoomAt(1 / zoomFactor); break;
+      case 'Escape':
+        e.preventDefault();
+        setFlyoutOpen(false);
+        setSelected(null);
+        setHovered(null);
+        break;
+      default:
+        break;
+    }
+  }, [dims]);
+
+  // ── A11y: live-region announcement for hovered/selected node (P2.7) ──
+  const activeNode = hovered ?? selected;
+  const liveAnnouncement = activeNode
+    ? `${shortLabel(activeNode.id)}. ${activeNode.parent_url ? 'Sub-ADI' : 'Root ADI'}. ` +
+      `Status ${activeNode.crawl_status}. ${activeNode.account_total} accounts, ` +
+      `${activeNode.token_count} token, ${activeNode.data_count} data, ` +
+      `${activeNode.book_count} key books, ${activeNode.entry_count} entries.`
+    : '';
+
+  // Region label summarizing the graph for screen readers.
+  const regionLabel =
+    `Network topology graph. ${positionedNodes.length.toLocaleString()} nodes, ` +
+    `${filteredEdges.length.toLocaleString()} visible edges. ` +
+    `Use arrow keys to pan, plus and minus to zoom, Escape to clear selection.`;
+
   /* ── Landing / Loading / Error State ─────────── */
 
   if (!loadRequested) {
@@ -561,7 +791,7 @@ export function NetworkGraph() {
               Network Topology
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 340, lineHeight: 1.6 }}>
-              Interactive canvas view of identity nodes and their relationships.
+              Each dot is an on-chain identity (ADI). Lines show how identities relate — hierarchy, who can authorize whom, shared signing keys, and delegated power. Node size = number of accounts.
             </div>
           </div>
           <button
@@ -657,13 +887,40 @@ export function NetworkGraph() {
     <div className="network-graph-fullscreen" ref={containerRef}>
 
       {/* ── Main Canvas ── */}
+      {/* Focusable interactive region (P2.7): keyboard pan/zoom + screen-reader
+          label summarizing node/edge counts. */}
       <canvas
         ref={canvasRef}
+        tabIndex={0}
+        role="application"
+        aria-label={regionLabel}
         style={{ display: 'block', width: '100%', height: '100%', cursor: dragRef.current ? 'grabbing' : 'grab' }}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseMove={handleMouseMove}
-        onMouseLeave={() => { dragRef.current = null; setHovered(null); }}
+        onKeyDown={handleKeyDown}
+        onMouseLeave={() => {
+          dragRef.current = null;
+          pendingMoveRef.current = null;
+          if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+          setHovered(null);
+          setCursorPos(null);
+        }}
+      />
+
+      {/* ── A11y: live region announcing hovered/selected node ── */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveAnnouncement}
+      </div>
+
+      {/* ── Overlay Canvas (hover/selection emphasis) ── */}
+      <canvas
+        ref={overlayRef}
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          width: '100%', height: '100%',
+          pointerEvents: 'none',
+        }}
       />
 
       {/* ── Floating Control Panel (Top-Left) ── */}
@@ -683,35 +940,35 @@ export function NetworkGraph() {
 
         {/* Color By */}
         <div className="net-control-group">
-          <div className="net-control-label">Color by</div>
+          <div className="net-control-label">
+            Color by
+            <InfoTip
+              label="Color modes"
+              definition="Status = crawl result; Account Count = number of accounts; Depth = root vs sub-identity; Key Reuse Risk = how many other identities share a signing key with this one (0 = none)."
+            />
+          </div>
           <select
             value={colorBy}
             onChange={e => setColorBy(e.target.value)}
             className="net-select"
           >
-            <option value="status">Status</option>
-            <option value="accounts">Account Count</option>
-            <option value="depth">Depth (Root/Sub)</option>
-            <option value="risk">Key Reuse Risk</option>
+            {COLOR_BY_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
         </div>
 
         {/* Display Filters */}
         <div className="net-control-group">
           <div className="net-control-label">Display</div>
-          {([
-            { key: 'hierarchy', label: 'Parent-child', color: '#6c8cff' },
-            { key: 'authority', label: 'Authority', color: '#f59e0b' },
-            { key: 'key_sharing', label: 'Key sharing', color: '#ef4444' },
-            { key: 'delegation', label: 'Delegation', color: '#34d399' },
-          ] as const).map(({ key, label, color }) => (
-            <label key={key} className="net-checkbox-label">
+          {EDGE_LEGEND_ITEMS.map(({ type, label }) => (
+            <label key={type} className="net-checkbox-label">
               <input
                 type="checkbox"
-                checked={edgeFilters[key]}
-                onChange={e => setEdgeFilters(f => ({ ...f, [key]: e.target.checked }))}
+                checked={edgeFilters[type]}
+                onChange={e => setEdgeFilters(f => ({ ...f, [type]: e.target.checked }))}
               />
-              <span className="net-checkbox-dot" style={{ background: color }} />
+              <span className="net-checkbox-dot" style={{ background: getEdgeLegendColor(type) }} />
               {label}
             </label>
           ))}
@@ -741,40 +998,108 @@ export function NetworkGraph() {
 
       {/* ── Floating Legend (Bottom-Left) ── */}
       <div className="net-legend">
-        <div className="net-legend-section">
-          {[
-            { label: 'Parent-child', color: '#6c8cff', dash: false },
-            { label: 'Authority', color: '#f59e0b', dash: true },
-            { label: 'Key sharing', color: '#ef4444', dash: true },
-            { label: 'Delegation', color: '#34d399', dash: true },
-          ].map(l => (
+        {/* Mode-aware color scale for the active "Color by" mode (P-C6). Shows
+            the same buckets/bands the node painter uses, so the legend always
+            explains the current coloring. */}
+        {(() => {
+          const legend = colorLegendItems(colorBy);
+          if (!legend) return null;
+          return (
+            <div className="net-legend-section net-legend-colorby">
+              <span className="net-legend-colorby-title">{legend.title}</span>
+              {legend.items.map(item => (
+                <span key={item.label} className="net-legend-item">
+                  <span
+                    className="net-legend-swatch"
+                    style={{ background: colorLegendItemColor(item, themeColors.canvasTextMuted) }}
+                  />
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
+
+        <div className="net-legend-section"
+          style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 6 }}>
+          {EDGE_LEGEND_ITEMS.map(l => (
             <span key={l.label} className="net-legend-item">
               <svg width="16" height="2">
-                <line x1="0" y1="1" x2="16" y2="1" stroke={l.color} strokeWidth="2"
+                <line x1="0" y1="1" x2="16" y2="1" stroke={getEdgeLegendColor(l.type)} strokeWidth="2"
                   strokeDasharray={l.dash ? '3,2' : undefined} />
               </svg>
               {l.label}
+              {l.term && <InfoTip term={l.term} />}
             </span>
           ))}
         </div>
 
         <div className="net-legend-section" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 6 }}>
-          <span className="net-legend-item">
-            <svg width="8" height="8"><circle cx="4" cy="4" r="3" fill="#6c8cff" /></svg>
-            Root ADI
+          {NODE_SHAPE_LEGEND_ITEMS.map(item => (
+            <span key={item.label} className="net-legend-item">
+              <svg width="8" height="8">
+                {item.shape === 'circle'
+                  ? <circle cx="4" cy="4" r="3" fill={getEntityColor(item.entity).color} />
+                  : <polygon points="4,0 8,4 4,8 0,4" fill={getEntityColor(item.entity).color} />}
+              </svg>
+              {item.label}
+              {item.shape === 'diamond' && <InfoTip term="sub-adi" />}
+            </span>
+          ))}
+          <span className="net-legend-item" style={{ color: 'var(--text-tertiary)' }}>
+            ◆ = sub-identity · ● = root identity · size = account count
           </span>
-          <span className="net-legend-item">
-            <svg width="8" height="8"><polygon points="4,0 8,4 4,8 0,4" fill="#a78bfa" /></svg>
-            Sub-ADI
+        </div>
+
+        {/* Color-blind-safe status markers (P3.4): error nodes are ringed so
+            done/error read without relying on red/green hue alone. */}
+        <div className="net-legend-section" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 6 }}>
+          {STATUS_MARKER_LEGEND_ITEMS.map(item => (
+            <span key={item.label} className="net-legend-item">
+              <svg width="12" height="12">
+                <circle cx="6" cy="6" r="3" fill={getEntityColor(item.entity).color} />
+                {item.marker === 'ring' && (
+                  <circle cx="6" cy="6" r="5" fill="none" stroke={themeColors.canvasText} strokeWidth="1.2" />
+                )}
+              </svg>
+              {item.label}
+            </span>
+          ))}
+          <span className="net-legend-item" style={{ color: 'var(--text-tertiary)' }}>
+            Node size = key reuse / account volume
           </span>
         </div>
       </div>
 
       {/* ── Hover Tooltip ── */}
+      {/* Cursor-anchored (P3.5): positioned near the pointer with an offset and
+          clamped to the container so it never overflows the viewport. Keeps the
+          existing `net-tooltip` styling and flyout-suppression behavior. */}
       <AnimatePresence>
         {hovered && !flyoutOpen && (
           <motion.div
             className="net-tooltip"
+            style={(() => {
+              // On narrow (mobile) widths defer to the CSS top-center layout
+              // (the max-width:768px media query), so don't set inline coords.
+              if (dims.width <= 768 || !cursorPos) return undefined;
+              const offset = 16;
+              const tipW = 220;
+              const tipH = 150;
+              const cx = cursorPos.x;
+              const cy = cursorPos.y;
+              // Flip to the left/up if the tooltip would overflow the container.
+              const left = cx + offset + tipW > dims.width ? cx - offset - tipW : cx + offset;
+              const top = cy + offset + tipH > dims.height ? cy - offset - tipH : cy + offset;
+              return {
+                position: 'absolute' as const,
+                left: Math.max(8, Math.min(left, dims.width - tipW - 8)),
+                top: Math.max(8, Math.min(top, dims.height - 8)),
+                right: 'auto' as const,
+                bottom: 'auto' as const,
+                pointerEvents: 'none' as const,
+              };
+            })()}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
@@ -828,10 +1153,15 @@ export function NetworkGraph() {
               {selected.parent_url && (
                 <div className="net-flyout-row">
                   <span>Parent</span>
-                  <span className="net-flyout-link" onClick={() => {
-                    const parent = nodeById.get(selected.parent_url!);
-                    if (parent) setSelected(parent);
-                  }}>{shortLabel(selected.parent_url)}</span>
+                  <button
+                    type="button"
+                    className="net-flyout-link"
+                    aria-label={`Select parent ${shortLabel(selected.parent_url)}`}
+                    onClick={() => {
+                      const parent = nodeById.get(selected.parent_url!);
+                      if (parent) setSelected(parent);
+                    }}
+                  >{shortLabel(selected.parent_url)}</button>
                 </div>
               )}
             </div>
@@ -882,15 +1212,21 @@ export function NetworkGraph() {
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {targets.slice(0, 8).map(t => (
-                        <span key={t} className="net-flyout-conn-tag" onClick={() => {
-                          const node = nodeById.get(t);
-                          if (node) {
-                            setSelected(node);
-                            setCamera({ x: dims.width / 2 - node.px * 3, y: dims.height / 2 - node.py * 3, zoom: 3 });
-                          }
-                        }}>
+                        <button
+                          type="button"
+                          key={t}
+                          className="net-flyout-conn-tag"
+                          aria-label={`Select connected node ${shortLabel(t)}`}
+                          onClick={() => {
+                            const node = nodeById.get(t);
+                            if (node) {
+                              setSelected(node);
+                              setCamera({ x: dims.width / 2 - node.px * 3, y: dims.height / 2 - node.py * 3, zoom: 3 });
+                            }
+                          }}
+                        >
                           {shortLabel(t).slice(0, 20)}
-                        </span>
+                        </button>
                       ))}
                       {targets.length > 8 && (
                         <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>+{targets.length - 8} more</span>

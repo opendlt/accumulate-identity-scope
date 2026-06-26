@@ -1,7 +1,7 @@
 import { lazy, Suspense, Component, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, MotionConfig } from 'framer-motion';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AppShell } from './components/layout/AppShell';
 import { PageTransition } from './components/ui/PageTransition';
@@ -121,14 +121,16 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <AppShell>
-              <KeyboardNav />
-              <AnimatedRoutes />
-            </AppShell>
-          </BrowserRouter>
-        </QueryClientProvider>
+        <MotionConfig reducedMotion="user">
+          <QueryClientProvider client={queryClient}>
+            <BrowserRouter>
+              <AppShell>
+                <KeyboardNav />
+                <AnimatedRoutes />
+              </AppShell>
+            </BrowserRouter>
+          </QueryClientProvider>
+        </MotionConfig>
       </ThemeProvider>
     </ErrorBoundary>
   );

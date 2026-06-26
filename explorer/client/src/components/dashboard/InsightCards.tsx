@@ -2,6 +2,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pi
 import { GlassCard } from '../ui/GlassCard';
 import { AnimatedCounter } from '../ui/AnimatedCounter';
 import { GlowBadge } from '../ui/GlowBadge';
+import { InfoTip } from '../ui/InfoTip';
 import type { NetworkSummary } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTooltipStyle, getThemeColors } from '../../hooks/useThemeColors';
@@ -31,7 +32,7 @@ export function KeyReuseCard({ data }: { data: NetworkSummary }) {
       <CardStripe color="linear-gradient(90deg, #ef4444, #f97316)" />
       <div style={{ padding: '16px 0 0' }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-          Top Key Reuse
+          Top Key Reuse<InfoTip term="key-reuse" />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
           <span style={{ fontSize: 28, fontWeight: 800, color: '#ef4444' }}>
@@ -68,7 +69,7 @@ export function TokenEconomyCard({ data }: { data: NetworkSummary }) {
       <CardStripe color="linear-gradient(90deg, #22d3ee, #6c8cff)" />
       <div style={{ padding: '16px 0 0' }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-          Token Economy
+          Token Economy<InfoTip term="acme" />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ width: 80, height: 80 }}>
@@ -120,7 +121,7 @@ export function AuthorityHotspotCard({ data }: { data: NetworkSummary }) {
       <CardStripe color="linear-gradient(90deg, #f59e0b, #f472b6)" />
       <div style={{ padding: '16px 0 0' }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-          Authority Hotspot
+          Authority Hotspot<InfoTip term="authority" />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
           <span style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b' }}>
@@ -161,7 +162,7 @@ export function DepthCard({ data }: { data: NetworkSummary }) {
       <CardStripe color="linear-gradient(90deg, #6c8cff, #34d399)" />
       <div style={{ padding: '16px 0 0' }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-          Hierarchy Depth
+          Hierarchy Depth<InfoTip term="sub-adi" />
         </div>
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
           {data.depth_distribution.map(d => (

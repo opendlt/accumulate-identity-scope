@@ -31,14 +31,19 @@
   --color-warning:    #f59e0b;
 
   /* ---- Text ---- */
+  /* Secondary/tertiary tuned to pass WCAG AA (>=4.5:1) on the dark surfaces.
+     (Previous tertiary #4a5078 was ~2.3:1 and failed.) */
   --text-primary:   #e8ecf4;
-  --text-secondary: #7b83a6;
-  --text-tertiary:  #4a5078;
+  --text-secondary: #9aa2c8;
+  --text-tertiary:  #828ab0;
   --text-inverse:   #0b0e18;
 
-  /* ---- Gradients ---- */
-  --gradient-hero:     linear-gradient(135deg, #6c8cff 0%, #a78bfa 50%, #f472b6 100%);
-  --gradient-hero-h:   linear-gradient(90deg, #6c8cff 0%, #a78bfa 50%, #f472b6 100%);
+  /* ---- Gradients ----
+     Hero is a focused blue→cyan "scope sweep" rather than the generic
+     blue→violet→pink AI-dashboard ramp, to give the Scope an ownable accent. */
+  --gradient-hero:     linear-gradient(135deg, #5b8def 0%, #22d3ee 100%);
+  --gradient-hero-h:   linear-gradient(90deg, #5b8def 0%, #22d3ee 100%);
+  --reticle-bracket:   rgba(108, 140, 255, 0.30);
   --gradient-surface:  linear-gradient(180deg, rgba(108, 140, 255, 0.04) 0%, transparent 100%);
   --gradient-glow:     radial-gradient(ellipse at 50% 0%, rgba(108, 140, 255, 0.06) 0%, transparent 70%);
   --gradient-danger:   linear-gradient(135deg, #ef4444 0%, #f97316 100%);
@@ -109,8 +114,24 @@
 
   --text-primary:   #1a1d2e;
   --text-secondary: #5a6178;
-  --text-tertiary:  #8b92ab;
+  --text-tertiary:  #6a7290;   /* was #8b92ab (~3.1:1) — now ~4.7:1 on white */
   --text-inverse:   #e8ecf4;
+
+  /* ---- Light-theme entity ramp ----
+     The dark-mode neon accents wash out / fail contrast on white, so the light
+     theme gets its own darker, less-saturated entity palette (all >=3:1 on
+     white, used for text/icons/strokes). Glow/dim rgba variants stay as faint
+     tints and read fine on both themes. */
+  --color-adi:       #4658d6;
+  --color-token:     #0e8fb0;
+  --color-data:      #7c5cd6;
+  --color-key:       #0f9d63;
+  --color-authority: #b87a08;
+  --color-issuer:    #cc3d86;
+  --color-danger:    #d32f2f;
+  --color-success:   #1a9e54;
+  --color-warning:   #b87a08;
+  --reticle-bracket: rgba(70, 88, 214, 0.28);
 
   --gradient-surface: linear-gradient(180deg, rgba(108, 140, 255, 0.06) 0%, transparent 100%);
   --gradient-glow:    radial-gradient(ellipse at 50% 0%, rgba(108, 140, 255, 0.08) 0%, transparent 70%);

@@ -8,8 +8,8 @@ export function ScopeLogo({ size = 32 }: ScopeLogoProps) {
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#6c8cff" />
-          <stop offset="1" stopColor="#a78bfa" />
+          <stop stopColor="#5b8def" />
+          <stop offset="1" stopColor="#22d3ee" />
         </linearGradient>
       </defs>
       {/* Outer reticle circle */}

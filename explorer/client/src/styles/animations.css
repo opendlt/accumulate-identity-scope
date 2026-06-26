@@ -106,3 +106,18 @@
 .stagger-children > *:nth-child(8)  { animation-delay: 350ms; }
 .stagger-children > *:nth-child(9)  { animation-delay: 400ms; }
 .stagger-children > *:nth-child(10) { animation-delay: 450ms; }
+
+/* ============================================
+   REDUCED MOTION
+   Respect the OS "reduce motion" setting: neutralize CSS keyframe loops and
+   transitions. Framer-motion is handled separately via <MotionConfig
+   reducedMotion="user"> at the app root.
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
