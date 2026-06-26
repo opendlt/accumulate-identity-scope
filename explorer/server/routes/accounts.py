@@ -1,10 +1,25 @@
 """Token and data account endpoints."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
-from ..database import get_db, rows_to_list, row_to_dict
+from ..database import get_db, rows_to_list, row_to_dict, table_columns
 
 router = APIRouter(prefix="/api", tags=["accounts"])
+
+
+def _order_clause(table: str, sort: Optional[str], dir: Optional[str]) -> str:
+    """Build a safe ORDER BY clause from a column whitelisted against the schema.
+
+    Sort/dir come from the client, so the column is validated against the table's
+    real columns (never interpolated blindly) and falls back to `url`. A stable
+    `, url` tiebreaker keeps pagination deterministic.
+    """
+    columns = table_columns(table)
+    col = sort if sort in columns else "url"
+    direction = "DESC" if (dir or "").lower() == "desc" else "ASC"
+    if col == "url":
+        return f"ORDER BY url {direction}"
+    return f"ORDER BY {col} {direction}, url ASC"
 
 
 @router.get("/token-accounts")
@@ -12,6 +27,8 @@ def list_token_accounts(
     adi_url: Optional[str] = None,
     token_url: Optional[str] = None,
     search: Optional[str] = None,
+    sort: Optional[str] = None,
+    dir: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=500),
 ):
@@ -31,9 +48,10 @@ def list_token_accounts(
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         total = conn.execute(f"SELECT COUNT(*) FROM token_accounts {where}", params).fetchone()[0]
 
+        order = _order_clause("token_accounts", sort, dir)
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"SELECT * FROM token_accounts {where} ORDER BY url LIMIT ? OFFSET ?",
+            f"SELECT * FROM token_accounts {where} {order} LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
 
@@ -47,7 +65,7 @@ def get_token_account(url: str):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM token_accounts WHERE url = ?", (url,)).fetchone()
         if not row:
-            return {"error": "Token account not found"}
+            raise HTTPException(status_code=404, detail=f"Token account not found: {url}")
         acct = row_to_dict(row)
         acct["authorities"] = [
             dict(r) for r in conn.execute(
@@ -61,6 +79,8 @@ def get_token_account(url: str):
 def list_data_accounts(
     adi_url: Optional[str] = None,
     search: Optional[str] = None,
+    sort: Optional[str] = None,
+    dir: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=500),
 ):
@@ -77,9 +97,10 @@ def list_data_accounts(
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         total = conn.execute(f"SELECT COUNT(*) FROM data_accounts {where}", params).fetchone()[0]
 
+        order = _order_clause("data_accounts", sort, dir)
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"SELECT * FROM data_accounts {where} ORDER BY url LIMIT ? OFFSET ?",
+            f"SELECT * FROM data_accounts {where} {order} LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
 
