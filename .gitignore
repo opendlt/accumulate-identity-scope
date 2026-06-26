@@ -47,3 +47,13 @@ explorer/client/src/App.css
 explorer/client/src/index.css
 explorer/client/README.md
 config.bat
+
+# Local-only review/audit docs (not part of source)
+SCOPE_REVIEW.md
+CLARITY_REVIEW.md
+DATA_REVIEW.md
+
+# Agent / deploy / scratch artifacts
+.claude/
+.vercel/
+shots/

@@ -1,0 +1,21 @@
+# Vercel only builds/serves the static frontend (explorer/client → dist).
+# Everything below is backend-only, data, or local artifacts and must NOT be
+# uploaded — the 129MB SQLite DB in particular blew past Vercel's 100MB limit.
+*.db
+*.db-wal
+*.db-shm
+identity_tree_complete.db
+
+# Backend (runs as a Docker container on the API server, not on Vercel)
+explorer/server/
+explorer/Dockerfile
+explorer/docker-compose.yml
+explorer/requirements.txt
+api_client.py
+
+# Local artifacts / tooling
+shots/
+**/__pycache__/
+*.log
+.claude/
+.git/
