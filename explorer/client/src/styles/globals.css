@@ -36,6 +36,24 @@ a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; }
 input, select, textarea { font-family: inherit; }
 
+/* Visually hide content while keeping it available to screen readers
+   (used for accessible data-table alternatives to canvas/SVG charts). */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Visible keyboard focus ring for interactive elements. */
+:focus-visible {
+  outline: 2px solid var(--color-adi);
+  outline-offset: 2px;
+}
+
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -331,6 +349,20 @@ input, select, textarea { font-family: inherit; }
   box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.08);
 }
 
+/* Search trigger rendered as a real <button> for a11y while keeping the
+   exact visual of the previous readonly input (left-aligned placeholder text). */
+.topbar-search-trigger {
+  display: block;
+  text-align: left;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.topbar-search-trigger:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
 .topbar-search-wrapper {
   position: relative;
 }
@@ -369,10 +401,12 @@ input, select, textarea { font-family: inherit; }
   color: var(--text-tertiary);
 }
 
-/* ---- Glass Card ---- */
+/* ---- Glass Card ----
+   Base cards are SOLID — backdrop-blur is reserved for true overlapping
+   overlays (command palette, network panels, tooltips). Blurring every card
+   over a scrolling page was a GPU cost and flattened the visual hierarchy. */
 .glass-card {
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px) saturate(1.15);
+  background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow:
@@ -437,6 +471,65 @@ input, select, textarea { font-family: inherit; }
 
 .glass-card__body--compact {
   padding: var(--space-md);
+}
+
+/* Reticle "viewfinder" corner brackets on focal (glow) cards — the scope motif
+   appears on emphasized cards without per-view markup. */
+.glass-card--glow::after,
+.glass-card--scope::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  pointer-events: none;
+  border-radius: 10px;
+  background:
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) left  top    / 13px 1.5px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) left  top    / 1.5px 13px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) right top    / 13px 1.5px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) right top    / 1.5px 13px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) left  bottom / 13px 1.5px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) left  bottom / 1.5px 13px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) right bottom / 13px 1.5px no-repeat,
+    linear-gradient(var(--reticle-bracket), var(--reticle-bracket)) right bottom / 1.5px 13px no-repeat;
+}
+
+/* ---- Scope loader (PageLoader) ---- */
+.page-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 400px;
+  width: 100%;
+}
+
+.page-loader__msg {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scope-loader {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+}
+
+.scope-loader__sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg,
+    transparent 0deg, transparent 240deg,
+    var(--color-adi-glow) 320deg, var(--color-adi) 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: spinSlow 1.6s linear infinite;
 }
 
 /* ---- Stat Orb ---- */
@@ -1715,13 +1808,21 @@ input, select, textarea { font-family: inherit; }
   padding: var(--space-sm);
 }
 
-.cmd-group-heading {
+.cmd-group-heading,
+[cmdk-group-heading] {
   padding: var(--space-sm) var(--space-sm);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
+}
+
+/* cmdk renders the list/group wrappers as plain divs; keep them transparent
+   so the palette visuals are unchanged. */
+[cmdk-list-sizer],
+[cmdk-group-items] {
+  display: block;
 }
 
 .cmd-item {
@@ -2677,6 +2778,26 @@ input, select, textarea { font-family: inherit; }
   flex-shrink: 0;
 }
 
+/* Mode-aware color-by legend (P-C6): compact swatch row describing the active
+   "Color by" scale (Status / Account Count / Depth / Key Reuse Risk). */
+.net-legend-colorby {
+  align-items: center;
+}
+
+.net-legend-colorby-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+
+.net-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 /* ---- Hover Tooltip ---- */
 .net-tooltip {
   position: absolute;
@@ -2715,8 +2836,8 @@ input, select, textarea { font-family: inherit; }
   right: 0;
   bottom: 0;
   width: 360px;
-  background: rgba(11, 14, 24, 0.95);
-  backdrop-filter: blur(20px);
+  background: rgba(11, 14, 24, 0.97);
+  backdrop-filter: blur(12px);
   border-left: 1px solid rgba(108, 140, 255, 0.10);
   z-index: 25;
   overflow-y: auto;
@@ -2788,6 +2909,13 @@ input, select, textarea { font-family: inherit; }
 }
 
 .net-flyout-link {
+  /* Reset UA <button> styling so the real button matches the prior <span>. */
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: right;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--color-adi);
@@ -2827,6 +2955,9 @@ input, select, textarea { font-family: inherit; }
 }
 
 .net-flyout-conn-tag {
+  /* Real <button> reset so it matches the prior <span> tag appearance. */
+  appearance: none;
+  line-height: normal;
   padding: 2px 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -3962,4 +4093,812 @@ button:focus-visible {
 /* Export menu shadow */
 [data-theme="light"] .export-menu {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* ===================================================================
+   Phase 3 (P3.4 color-blind cue + P3.7 responsive) — TreeExplorer +
+   Dashboard. Appended block: new rules only, no edits to the above.
+   =================================================================== */
+
+/* ---- P3.4: Tree node type marker (redundant, color-blind safe) ----
+   The colored dot still conveys type by hue; the single-letter marker
+   (A/T/D/K/M) next to it conveys the same type without relying on color. */
+.tree-node-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tree-node-type-letter {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  opacity: 0.85;
+  width: 7px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ---- P3.7: TreeExplorer mobile drawer (max-width: 768px) ----
+   Single column: the detail panel is primary/full-width, and the tree
+   list panel becomes a slide-over drawer toggled by "Browse tree". */
+
+/* Toggle button is desktop-hidden; only rendered on mobile (component-gated),
+   but keep it out of the desktop grid flow defensively. */
+.tree-browse-toggle { display: none; }
+
+@media (max-width: 768px) {
+  /* One column; the detail panel fills the row, the drawer overlays it. */
+  .tree-layout-3,
+  .tree-layout-3.context-closed {
+    grid-template-columns: 1fr;
+    margin: calc(var(--space-md) * -1);
+    margin-top: 0;
+    position: relative;
+    height: calc(100vh - var(--topbar-height) - var(--space-md) * 2);
+  }
+
+  /* Detail panel is the primary, full-width surface on mobile. */
+  .tree-layout-3 .detail-panel-3 {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Context panel already hidden < 1100px; keep it hidden here too. */
+  .tree-layout-3 .context-panel-3 { display: none; }
+
+  /* "Browse tree" toggle: floating pill above the detail panel. */
+  .tree-layout-3 .tree-browse-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 40;
+    padding: 6px 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: all var(--duration-fast);
+  }
+  .tree-layout-3 .tree-browse-toggle:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  /* The tree list becomes a slide-over drawer overlaying the detail panel. */
+  .tree-layout-3 .tree-panel-3 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    width: min(88vw, 340px);
+    max-width: 100%;
+    border-right: 1px solid var(--border-default);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-102%);
+    transition: transform var(--duration-normal) var(--ease-out);
+    will-change: transform;
+  }
+
+  /* Open state: slide the drawer into view (default closed on mobile). */
+  .tree-layout-3.tree-drawer-open .tree-panel-3 {
+    transform: translateX(0);
+  }
+
+  /* Tap-out backdrop behind the open drawer. */
+  .tree-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 45;
+    background: rgba(6, 8, 15, 0.5);
+    backdrop-filter: blur(2px);
+  }
+
+  /* Give the detail content breathing room below the floating toggle. */
+  .tree-layout-3 .detail-panel-3 .identity-profile,
+  .tree-layout-3 .detail-panel-3 .identity-empty-state {
+    padding-top: 48px;
+  }
+}
+
+/* ---- P3.7: Dashboard mobile reflow (max-width: 768px) ----
+   Force the auto-fit stat-orb and insight grids to a single column so
+   nothing overflows at ~375px. grid-3 (vitals) already collapses above. */
+@media (max-width: 768px) {
+  .dash-orb-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .dash-insight-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .dash-orb-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================
+   MEANING LAYER — InfoTips, glossary, provenance (Phase A)
+   ============================================ */
+
+.infotip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 5px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition: all var(--duration-fast);
+}
+.infotip-btn:hover,
+.infotip-btn[aria-expanded="true"] {
+  color: var(--color-adi);
+  border-color: var(--color-adi);
+  background: var(--color-adi-dim);
+}
+
+.term-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.infotip-pop {
+  position: fixed;
+  z-index: 1200;
+  background: var(--bg-glass-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 11px 13px;
+  font-family: var(--font-sans);
+  animation: fadeIn var(--duration-fast) var(--ease-out);
+}
+.infotip-pop__term {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  letter-spacing: -0.01em;
+}
+.infotip-pop__def {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.infotip-pop__why {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-subtle);
+}
+.infotip-pop__why-label {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-authority);
+  margin-right: 4px;
+}
+.infotip-pop__more {
+  margin-top: 9px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-adi);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.infotip-pop__more:hover { text-decoration: underline; }
+
+/* ---- View intro / framing header ---- */
+.view-intro { margin-bottom: var(--space-md); }
+.view-intro__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.view-intro__lead {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  margin-top: 4px;
+  max-width: 720px;
+  line-height: 1.55;
+}
+.view-intro__audience {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Provenance banner + glossary button (topbar) ---- */
+.topbar-provenance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.topbar-provenance-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+  flex-shrink: 0;
+}
+.topbar-glossary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.topbar-glossary-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--color-adi-dim);
+}
+
+/* ---- Glossary drawer ---- */
+.glossary-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 15, 0.6);
+  backdrop-filter: blur(3px);
+  z-index: 1300;
+}
+.glossary-drawer {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 440px;
+  max-width: 92vw;
+  background: var(--bg-deep);
+  border-left: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+  z-index: 1301;
+  display: flex;
+  flex-direction: column;
+}
+.glossary-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-lg) var(--space-lg) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.glossary-title {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.glossary-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: 3px;
+  max-width: 320px;
+  line-height: 1.5;
+}
+.glossary-close {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.glossary-close:hover { color: var(--text-primary); }
+.glossary-search {
+  margin: var(--space-md) var(--space-lg) 0;
+  padding: 9px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  outline: none;
+}
+.glossary-search:focus { border-color: var(--border-strong); }
+.glossary-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-lg) var(--space-2xl);
+}
+.glossary-section { margin-top: var(--space-lg); }
+.glossary-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-adi);
+  margin-bottom: var(--space-sm);
+}
+.glossary-entry {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  margin-bottom: var(--space-sm);
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+}
+.glossary-entry--flash {
+  border-color: var(--color-adi);
+  background: var(--color-adi-dim);
+}
+.glossary-entry-term {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+.glossary-entry-def {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.glossary-entry-why {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.glossary-entry-why-label {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-authority);
+  margin-right: 4px;
+}
+.glossary-empty {
+  padding: var(--space-xl);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 768px) {
+  .topbar-provenance { display: none; }
+}
+
+/* ---- Risk callouts (Phase B: why it matters + what to do) ---- */
+.risk-note {
+  display: flex;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  margin-top: var(--space-sm);
+}
+.risk-note--danger {
+  border-color: rgba(239, 68, 68, 0.22);
+  background: rgba(239, 68, 68, 0.05);
+}
+.risk-note--warning {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.05);
+}
+.risk-note--info {
+  border-color: var(--border-default);
+  background: var(--color-adi-dim);
+}
+.risk-note__icon {
+  font-size: 13px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.risk-note--danger .risk-note__icon { color: var(--color-danger); }
+.risk-note--warning .risk-note__icon { color: var(--color-warning); }
+.risk-note--info .risk-note__icon { color: var(--color-adi); }
+.risk-note__body { flex: 1; min-width: 0; }
+.risk-note__why {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.risk-note__fix {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 5px;
+}
+.risk-note__fix-label {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-success);
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.12);
+}
+.risk-note__action {
+  margin-top: 8px;
+  padding: 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-adi);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.risk-note__action:hover {
+  background: var(--color-adi-dim);
+  border-color: var(--border-strong);
+}
+.risk-note--compact {
+  padding: 7px 10px;
+  margin-top: 6px;
+}
+.risk-note--compact .risk-note__why,
+.risk-note--compact .risk-note__fix { font-size: var(--text-xs); }
+
+/* Clickable risk rows (heatmap rows, cluster members) */
+.risk-row-clickable { cursor: pointer; }
+.risk-row-clickable:hover { filter: brightness(1.15); }
+
+/* ---- Onboarding: "Start here" welcome overlay (Phase D) ---- */
+.sidebar-starthere {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: var(--space-sm);
+  background: var(--color-adi-dim);
+  border: 1px solid rgba(108, 140, 255, 0.18);
+  border-radius: var(--radius-sm);
+  color: var(--color-adi);
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.sidebar-starthere:hover {
+  background: rgba(108, 140, 255, 0.14);
+  border-color: var(--border-strong);
+}
+
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  background: rgba(6, 8, 15, 0.74);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+}
+.welcome-dialog {
+  position: relative;
+  width: 680px;
+  max-width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  padding: var(--space-xl);
+}
+.welcome-dialog::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--gradient-hero-h);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.welcome-close {
+  position: absolute;
+  top: 14px; right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.welcome-close:hover { color: var(--text-primary); }
+.welcome-head {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+  margin-bottom: var(--space-lg);
+}
+.welcome-title {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.welcome-lead {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: 6px;
+  max-width: 540px;
+}
+.welcome-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-adi);
+  margin: var(--space-lg) 0 var(--space-sm);
+}
+.welcome-audiences {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+.welcome-audience {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+.welcome-audience-who {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.welcome-audience-q {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.45;
+  font-style: italic;
+}
+.welcome-views {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.welcome-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.welcome-view:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+}
+.welcome-view-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-adi);
+}
+.welcome-view-answers {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.welcome-footer {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.welcome-btn {
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  border: 1px solid var(--border-default);
+  display: inline-flex;
+  align-items: center;
+}
+.welcome-btn--ghost {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+.welcome-btn--ghost:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.welcome-btn--primary {
+  margin-left: auto;
+  background: var(--color-adi);
+  border-color: var(--color-adi);
+  color: #fff;
+}
+.welcome-btn--primary:hover { filter: brightness(1.08); }
+
+@media (max-width: 640px) {
+  .welcome-audiences { grid-template-columns: 1fr; }
+  .welcome-dialog { padding: var(--space-lg); }
+}
+
+/* ---- Per-ADI Security Report Card (Phase E) ---- */
+.report-card { display: flex; flex-direction: column; gap: var(--space-md); }
+.report-empty, .report-loading {
+  padding: var(--space-2xl);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+.report-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+.report-grade {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+  border: 2px solid;
+}
+.report-grade--good { color: var(--color-success); border-color: var(--color-success); background: rgba(34, 197, 94, 0.08); }
+.report-grade--warn { color: var(--color-warning); border-color: var(--color-warning); background: rgba(245, 158, 11, 0.08); }
+.report-grade--bad  { color: var(--color-danger);  border-color: var(--color-danger);  background: rgba(239, 68, 68, 0.08); }
+.report-grade-letter { font-size: 30px; font-weight: 800; line-height: 1; }
+.report-grade-score { font-size: 10px; font-weight: 600; opacity: 0.85; margin-top: 2px; }
+.report-head-text { flex: 1; min-width: 0; }
+.report-head-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.report-summary {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 3px 0 4px;
+}
+.report-bench { font-size: var(--text-sm); color: var(--text-secondary); }
+.report-bench strong { color: var(--text-primary); }
+.report-bench-net { color: var(--text-tertiary); }
+.report-copy {
+  align-self: flex-start;
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--duration-fast);
+}
+.report-copy:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-sm);
+}
+.report-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+.report-chip-value { font-size: var(--text-lg); font-weight: 700; color: var(--text-primary); font-family: var(--font-mono); }
+.report-chip-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
+.report-findings-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-top: var(--space-xs);
+}
+.report-findings { display: flex; flex-direction: column; gap: var(--space-sm); }
+.report-finding {
+  display: flex;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-left-width: 3px;
+}
+.report-finding--high { border-left-color: var(--color-danger); }
+.report-finding--medium { border-left-color: var(--color-warning); }
+.report-finding--low { border-left-color: var(--color-adi); }
+.report-finding--ok { border-left-color: var(--color-success); }
+.report-sev {
+  flex-shrink: 0;
+  height: fit-content;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.report-sev--high { color: var(--color-danger); background: rgba(239, 68, 68, 0.12); }
+.report-sev--medium { color: var(--color-warning); background: rgba(245, 158, 11, 0.12); }
+.report-sev--low { color: var(--color-adi); background: var(--color-adi-dim); }
+.report-sev--ok { color: var(--color-success); background: rgba(34, 197, 94, 0.12); }
+.report-finding-body { flex: 1; min-width: 0; }
+.report-finding-title { font-size: var(--text-md); font-weight: 600; color: var(--text-primary); }
+.report-finding-detail { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; margin-top: 2px; }
+.report-finding-fix { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; margin-top: 6px; }
+.report-finding-fix-label {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-success);
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.12);
 }

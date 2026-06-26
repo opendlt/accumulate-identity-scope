@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { ScopeLogo } from '../ui/ScopeLogo';
+import { useOnboarding } from '../../contexts/OnboardingContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
 ] as const;
 
 export function Sidebar({ collapsed, onToggle, adiCount }: SidebarProps) {
+  const { openWelcome } = useOnboarding();
   return (
     <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-brand">
@@ -33,7 +35,7 @@ export function Sidebar({ collapsed, onToggle, adiCount }: SidebarProps) {
         )}
       </div>
 
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" aria-label="Primary">
         {NAV_ITEMS.map((item, i) => {
           if ('section' in item) {
             if (collapsed) return null;
@@ -52,6 +54,7 @@ export function Sidebar({ collapsed, onToggle, adiCount }: SidebarProps) {
                 `sidebar-link ${isActive ? 'active' : ''}`
               }
               title={collapsed ? `${item.label} (${item.shortcut})` : undefined}
+              aria-label={collapsed ? `${item.label} (${item.shortcut})` : undefined}
             >
               <span className="sidebar-link-icon">{item.icon}</span>
               {!collapsed && (
@@ -66,11 +69,25 @@ export function Sidebar({ collapsed, onToggle, adiCount }: SidebarProps) {
       </nav>
 
       <div className="sidebar-footer">
+        <button
+          className="sidebar-starthere"
+          onClick={openWelcome}
+          title="What is this? Start here"
+          aria-label="Start here — what is the Accumulate Scope"
+        >
+          <span aria-hidden="true">{'☉'}</span>
+          {!collapsed && <span>Start here</span>}
+        </button>
         <div className="sidebar-status">
           <span className="sidebar-status-dot" />
           {!collapsed && <span>{adiCount ?? '...'} ADIs indexed</span>}
         </div>
-        <button className="sidebar-collapse-btn" onClick={onToggle}>
+        <button
+          className="sidebar-collapse-btn"
+          onClick={onToggle}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+        >
           {collapsed ? '\u276F' : '\u276E  Collapse'}
         </button>
       </div>

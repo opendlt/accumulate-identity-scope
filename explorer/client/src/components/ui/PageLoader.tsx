@@ -1,38 +1,26 @@
+import { Reticle } from './Reticle';
+
 /**
- * Full-page loading state with spinning ring and node-tree icon.
- * Used across all major views while data is being fetched.
+ * Full-page loading state styled as a targeting scope acquiring a lock: a static
+ * reticle with a rotating radar sweep and a pulsing identity node at the center.
  */
-export function PageLoader({ message = 'Loading...' }: { message?: string }) {
+export function PageLoader({ message = 'Acquiring scope…' }: { message?: string }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 20, minHeight: 400, width: '100%',
-    }}>
-      <div style={{ position: 'relative', width: 64, height: 64 }}>
-        <div style={{
-          position: 'absolute', inset: 0, borderRadius: '50%',
-          border: '2px solid var(--border-subtle)',
-        }} />
-        <div style={{
-          position: 'absolute', inset: 0, borderRadius: '50%',
-          border: '2px solid transparent', borderTopColor: 'var(--color-adi)',
-          animation: 'spinSlow 1s linear infinite',
-        }} />
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-adi)" strokeWidth="1.5" strokeLinecap="round" style={{ animation: 'breathe 2s ease-in-out infinite' }}>
-            <circle cx="12" cy="12" r="2" fill="var(--color-adi)" />
-            <circle cx="6" cy="6" r="1.5" fill="var(--color-token)" />
-            <circle cx="18" cy="6" r="1.5" fill="var(--color-data)" />
-            <line x1="12" y1="12" x2="6" y2="6" />
-            <line x1="12" y1="12" x2="18" y2="6" />
+    <div className="page-loader" role="status" aria-live="polite">
+      <div className="scope-loader">
+        <span className="scope-loader__sweep" aria-hidden="true" />
+        <Reticle size={72} strong>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+               style={{ animation: 'breathe 2s ease-in-out infinite' }}>
+            <line x1="12" y1="12" x2="6" y2="6" stroke="var(--color-token)" strokeWidth="1.4" strokeLinecap="round" />
+            <line x1="12" y1="12" x2="18" y2="6" stroke="var(--color-data)" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="12" cy="12" r="2.4" fill="var(--color-adi)" />
+            <circle cx="6" cy="6" r="1.6" fill="var(--color-token)" />
+            <circle cx="18" cy="6" r="1.6" fill="var(--color-data)" />
           </svg>
-        </div>
+        </Reticle>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>
-        {message}
-      </div>
+      <div className="page-loader__msg">{message}</div>
     </div>
   );
 }

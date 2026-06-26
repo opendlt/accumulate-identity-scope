@@ -4,6 +4,8 @@ import { Sidebar } from './Sidebar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { Topbar } from './Topbar';
 import { CommandPalette } from './CommandPalette';
+import { GlossaryProvider } from '../../contexts/GlossaryContext';
+import { OnboardingProvider } from '../../contexts/OnboardingContext';
 import { api } from '../../api/client';
 
 interface AppShellProps {
@@ -36,20 +38,32 @@ export function AppShell({ children }: AppShellProps) {
   }, []);
 
   return (
-    <div className="app-layout">
-      <Sidebar
-        collapsed={collapsed}
-        onToggle={() => setCollapsed(c => !c)}
-        adiCount={stats?.counts.adis}
-      />
-      <div className="app-content-area">
-        <Topbar onOpenSearch={handleOpenSearch} />
-        <main className="app-main">
-          {children}
-        </main>
+    <GlossaryProvider>
+     <OnboardingProvider>
+      <div className="app-layout">
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={() => setCollapsed(c => !c)}
+          adiCount={stats?.counts.adis}
+        />
+        <div className="app-content-area">
+          <Topbar
+            onOpenSearch={handleOpenSearch}
+            dataAsOf={stats?.meta?.data_as_of ?? null}
+            network={stats?.meta?.network}
+          />
+          <main className="app-main">
+            {children}
+          </main>
+        </div>
+        <MobileBottomNav />
+        <CommandPalette
+          open={cmdOpen}
+          onClose={handleCloseSearch}
+          onToggleSidebar={() => setCollapsed(c => !c)}
+        />
       </div>
-      <MobileBottomNav />
-      <CommandPalette open={cmdOpen} onClose={handleCloseSearch} />
-    </div>
+     </OnboardingProvider>
+    </GlossaryProvider>
   );
 }

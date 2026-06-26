@@ -13,6 +13,7 @@ const TYPE_VARIANTS: Record<string, 'adi' | 'token' | 'data' | 'key' | 'issuer'>
   'Data Accounts': 'data',
   'Key Books': 'key',
   'Token Issuers': 'issuer',
+  'Lite Accounts': 'key',
 };
 
 export function SearchResultsPage() {
@@ -50,6 +51,7 @@ export function SearchResultsPage() {
     { title: 'Data Accounts', items: data.data_accounts },
     { title: 'Key Books', items: data.key_books },
     { title: 'Token Issuers', items: data.token_issuers },
+    { title: 'Lite Accounts', items: data.lite_accounts ?? [] },
   ];
 
   const allItems = sections.flatMap(s => s.items.map((item: any) => ({ type: s.title, url: item.url })));

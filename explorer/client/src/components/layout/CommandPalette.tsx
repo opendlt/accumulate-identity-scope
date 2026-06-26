@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Command } from 'cmdk';
 import { api } from '../../api/client';
+import { useTheme } from '../../contexts/ThemeContext';
+import { useGlossary } from '../../contexts/GlossaryContext';
+import { useOnboarding } from '../../contexts/OnboardingContext';
 import type { SearchResults } from '../../types';
 
 interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
+  onToggleSidebar?: () => void;
 }
 
 interface ResultItem {
@@ -14,42 +19,85 @@ interface ResultItem {
   route: string;
 }
 
-export function CommandPalette({ open, onClose }: CommandPaletteProps) {
+interface ViewCommand {
+  route: string;
+  label: string;
+  icon: string;
+}
+
+const VIEW_COMMANDS: ViewCommand[] = [
+  { route: '/',             label: 'Dashboard',    icon: '◈' },
+  { route: '/network',      label: 'Network',      icon: '⬪' },
+  { route: '/tree',         label: 'Tree',         icon: '⮡' },
+  { route: '/accounts',     label: 'Accounts',     icon: '▣' },
+  { route: '/keys',         label: 'Keys',         icon: '⬢' },
+  { route: '/authorities',  label: 'Authorities',  icon: '⬡' },
+  { route: '/intelligence', label: 'Intelligence', icon: '⦾' },
+  { route: '/search',       label: 'Search',       icon: '⌕' },
+];
+
+const typeIcons: Record<string, string> = {
+  'ADI': '◈',
+  'Token Account': '▣',
+  'Data Account': '▢',
+  'Key Book': '⬢',
+  'Token Issuer': '⬣',
+  'Lite Account': '◇',
+};
+
+const ENTITY_TYPE_ORDER = ['ADI', 'Token Account', 'Data Account', 'Key Book', 'Token Issuer', 'Lite Account'];
+
+export function CommandPalette({ open, onClose, onToggleSidebar }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ResultItem[]>([]);
-  const [selected, setSelected] = useState(0);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef(0);
+  // Element focused before the palette opened, so we can restore it on close.
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
+  const { isDark, toggleTheme } = useTheme();
+  const { openGlossary } = useGlossary();
+  const { openWelcome } = useOnboarding();
 
+  // On open: capture the element to restore focus to, reset state, focus the input.
+  // On close (open -> false): restore focus to the previously focused element.
   useEffect(() => {
     if (open) {
+      restoreFocusRef.current = document.activeElement as HTMLElement | null;
       setQuery('');
       setResults([]);
-      setSelected(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setLoading(false);
+      const t = window.setTimeout(() => inputRef.current?.focus(), 50);
+      return () => window.clearTimeout(t);
+    }
+    // closed: restore focus
+    const toRestore = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    if (toRestore && typeof toRestore.focus === 'function') {
+      toRestore.focus();
     }
   }, [open]);
 
-  // global keyboard shortcut
+  // Restore focus if the component unmounts while open.
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        if (open) onClose();
-        else {
-          // parent handles opening
-        }
+    return () => {
+      const toRestore = restoreFocusRef.current;
+      if (toRestore && typeof toRestore.focus === 'function') {
+        toRestore.focus();
       }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+    };
+  }, []);
+
+  const runAndClose = useCallback((fn: () => void) => {
+    fn();
+    onClose();
+  }, [onClose]);
 
   const search = useCallback((q: string) => {
     clearTimeout(timerRef.current);
-    if (q.length < 2) { setResults([]); return; }
+    if (q.length < 2) { setResults([]); setLoading(false); return; }
     setLoading(true);
     timerRef.current = window.setTimeout(async () => {
       try {
@@ -65,84 +113,178 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           items.push({ type: 'Key Book', url: a.url, route: `/keys?search=${encodeURIComponent(a.url)}` }));
         data.token_issuers.slice(0, 2).forEach(a =>
           items.push({ type: 'Token Issuer', url: a.url, route: `/accounts?search=${encodeURIComponent(a.url)}` }));
+        (data.lite_accounts ?? []).slice(0, 5).forEach(a =>
+          items.push({ type: 'Lite Account', url: a.url, route: `/accounts?tab=lite&search=${encodeURIComponent(a.url)}` }));
         setResults(items);
-        setSelected(0);
       } catch { /* ignore */ }
       setLoading(false);
     }, 200);
   }, []);
 
-  function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Escape') { onClose(); return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(s + 1, results.length - 1)); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)); }
-    if (e.key === 'Enter' && results[selected]) {
-      navigate(results[selected].route);
-      onClose();
+  // Focus trap + document-level Escape: keep Tab focus within the dialog and
+  // ensure Escape always closes regardless of which child is focused.
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !dialog.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !dialog.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
-  }
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [open, onClose]);
 
   if (!open) return null;
 
-  const typeIcons: Record<string, string> = {
-    'ADI': '\u25C8',
-    'Token Account': '\u25A3',
-    'Data Account': '\u25A2',
-    'Key Book': '\u2B22',
-    'Token Issuer': '\u2B23',
-  };
+  const hasQuery = query.trim().length >= 2;
+  const grouped = ENTITY_TYPE_ORDER
+    .map(type => ({ type, items: results.filter(r => r.type === type) }))
+    .filter(g => g.items.length > 0);
 
   return (
     <div className="cmd-overlay" onClick={onClose}>
-      <div className="cmd-dialog" onClick={e => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          className="cmd-input"
-          placeholder="Search identities, accounts, keys..."
-          value={query}
-          onChange={e => { setQuery(e.target.value); search(e.target.value); }}
-          onKeyDown={onKeyDown}
-        />
-        <div className="cmd-list">
-          {loading && <div className="cmd-empty">Searching...</div>}
-          {!loading && query.length >= 2 && results.length === 0 && (
-            <div className="cmd-empty">No results for "{query}"</div>
-          )}
-          {!loading && results.length > 0 && (
-            <>
-              {/* group by type */}
-              {['ADI', 'Token Account', 'Data Account', 'Key Book', 'Token Issuer'].map(type => {
-                const items = results.filter(r => r.type === type);
-                if (items.length === 0) return null;
-                return (
-                  <div key={type}>
-                    <div className="cmd-group-heading">{type}s ({items.length})</div>
-                    {items.map(item => {
-                      const idx = results.indexOf(item);
-                      return (
-                        <div
-                          key={item.url}
-                          className="cmd-item"
-                          aria-selected={idx === selected}
-                          onMouseEnter={() => setSelected(idx)}
-                          onClick={() => { navigate(item.route); onClose(); }}
-                        >
-                          <span className="cmd-item-icon">{typeIcons[item.type] || '\u25CB'}</span>
-                          <span className="cmd-item-url">{item.url}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </>
-          )}
-          {query.length < 2 && (
-            <div className="cmd-empty" style={{ opacity: 0.5 }}>
-              Type at least 2 characters to search...
-            </div>
-          )}
-        </div>
+      <div
+        ref={dialogRef}
+        className="cmd-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* cmdk Command provides listbox/option semantics, unique ids,
+            aria-activedescendant + aria-controls on the input, and aria-selected. */}
+        <Command
+          label="Command palette"
+          shouldFilter={false}
+          loop
+        >
+          <Command.Input
+            ref={inputRef}
+            className="cmd-input"
+            placeholder="Search identities, accounts, keys, or run a command..."
+            value={query}
+            onValueChange={val => { setQuery(val); search(val); }}
+          />
+          <Command.List className="cmd-list">
+            {loading && <div className="cmd-empty">Searching...</div>}
+
+            {/* Persistent "search for query" row */}
+            {hasQuery && (
+              <Command.Group heading="Search">
+                <Command.Item
+                  value={`search-all-${query}`}
+                  className="cmd-item"
+                  onSelect={() => runAndClose(() => navigate(`/search?q=${encodeURIComponent(query)}`))}
+                >
+                  <span className="cmd-item-icon">{'⌕'}</span>
+                  <span className="cmd-item-url">Search for "{query}" &hellip;</span>
+                </Command.Item>
+              </Command.Group>
+            )}
+
+            {/* Entity search results, grouped by type */}
+            {!loading && grouped.map(({ type, items }) => (
+              <Command.Group key={type} heading={`${type}s (${items.length})`}>
+                {items.map(item => (
+                  <Command.Item
+                    key={item.url}
+                    value={`entity-${item.url}`}
+                    className="cmd-item"
+                    onSelect={() => runAndClose(() => navigate(item.route))}
+                  >
+                    <span className="cmd-item-icon">{typeIcons[item.type] || '○'}</span>
+                    <span className="cmd-item-url">{item.url}</span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            ))}
+
+            {!loading && hasQuery && results.length === 0 && (
+              <div className="cmd-empty">No matching entities for "{query}"</div>
+            )}
+
+            {/* Real commands */}
+            <Command.Group heading="Commands">
+              {VIEW_COMMANDS.map(cmd => (
+                <Command.Item
+                  key={cmd.route}
+                  value={`view-${cmd.label}`}
+                  keywords={['go', 'view', 'navigate', cmd.label]}
+                  className="cmd-item"
+                  onSelect={() => runAndClose(() => navigate(cmd.route))}
+                >
+                  <span className="cmd-item-icon">{cmd.icon}</span>
+                  <span className="cmd-item-url">Go to {cmd.label}</span>
+                </Command.Item>
+              ))}
+              <Command.Item
+                value="open-glossary"
+                keywords={['glossary', 'help', 'define', 'definition', 'terms', 'concepts', 'what is']}
+                className="cmd-item"
+                onSelect={() => runAndClose(() => openGlossary())}
+              >
+                <span className="cmd-item-icon" style={{ fontStyle: 'italic', fontWeight: 700 }}>i</span>
+                <span className="cmd-item-url">Open glossary</span>
+              </Command.Item>
+              <Command.Item
+                value="start-here"
+                keywords={['start', 'welcome', 'help', 'intro', 'onboarding', 'what is', 'guide', 'tour']}
+                className="cmd-item"
+                onSelect={() => runAndClose(() => openWelcome())}
+              >
+                <span className="cmd-item-icon">{'☉'}</span>
+                <span className="cmd-item-url">Start here — what is the Scope?</span>
+              </Command.Item>
+              <Command.Item
+                value="toggle-theme"
+                keywords={['theme', 'dark', 'light', 'mode']}
+                className="cmd-item"
+                onSelect={() => runAndClose(toggleTheme)}
+              >
+                <span className="cmd-item-icon">{isDark ? '☀' : '☾'}</span>
+                <span className="cmd-item-url">Toggle theme ({isDark ? 'light' : 'dark'})</span>
+              </Command.Item>
+              {onToggleSidebar && (
+                <Command.Item
+                  value="toggle-sidebar"
+                  keywords={['sidebar', 'collapse', 'expand', 'menu']}
+                  className="cmd-item"
+                  onSelect={() => runAndClose(onToggleSidebar)}
+                >
+                  <span className="cmd-item-icon">{'☰'}</span>
+                  <span className="cmd-item-url">Toggle sidebar</span>
+                </Command.Item>
+              )}
+            </Command.Group>
+          </Command.List>
+        </Command>
       </div>
     </div>
   );

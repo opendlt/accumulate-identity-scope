@@ -11,11 +11,13 @@ export interface ThemeColors {
   cursorFill: string;
 }
 
+// Dim/muted match the --text-secondary/--text-tertiary tokens, raised to pass
+// WCAG AA on the canvas background (previous muted #4a5078 was ~2.3:1).
 const DARK: ThemeColors = {
   canvasBg: '#06080f',
   canvasText: '#e8ecf4',
-  canvasTextDim: '#7b83a6',
-  canvasTextMuted: '#4a5078',
+  canvasTextDim: '#9aa2c8',
+  canvasTextMuted: '#828ab0',
   tooltipBg: '#111628',
   tooltipBorder: 'rgba(108,140,255,0.12)',
   gridLine: 'rgba(108,140,255,0.08)',
@@ -26,7 +28,7 @@ const LIGHT: ThemeColors = {
   canvasBg: '#f5f7fa',
   canvasText: '#1a1d2e',
   canvasTextDim: '#5a6178',
-  canvasTextMuted: '#8b92ab',
+  canvasTextMuted: '#6a7290',
   tooltipBg: '#ffffff',
   tooltipBorder: 'rgba(108,140,255,0.18)',
   gridLine: 'rgba(108,140,255,0.12)',

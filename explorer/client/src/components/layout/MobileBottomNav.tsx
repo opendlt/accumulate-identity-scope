@@ -13,7 +13,7 @@ const NAV_ITEMS = [
 
 export function MobileBottomNav() {
   const [expanded, setExpanded] = useState(false);
-  const trackRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLElement>(null);
   const dragStartY = useRef<number | null>(null);
   const dragStartExpanded = useRef(false);
 
@@ -57,7 +57,8 @@ export function MobileBottomNav() {
       </button>
 
       {/* Scrollable nav track */}
-      <div className="mobile-nav-track" ref={trackRef}>
+      <nav className="mobile-nav-track" ref={trackRef} aria-label="Primary">
+
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
@@ -66,13 +67,14 @@ export function MobileBottomNav() {
             className={({ isActive }) =>
               `mobile-nav-item ${isActive ? 'active' : ''}`
             }
+            aria-label={item.label}
             onClick={() => setExpanded(false)}
           >
-            <span className="mobile-nav-icon">{item.icon}</span>
+            <span className="mobile-nav-icon" aria-hidden="true">{item.icon}</span>
             <span className="mobile-nav-label">{item.label}</span>
           </NavLink>
         ))}
-      </div>
+      </nav>
     </div>
   );
 }
